@@ -29,7 +29,6 @@ const navItems = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
-// Deterministic gradient per user so the same person always gets the same avatar color
 const AVATAR_GRADIENTS = [
   'from-blue-500 to-indigo-600',
   'from-emerald-500 to-teal-600',
@@ -150,7 +149,6 @@ export function AppShell({ children, user, currentPath, title, description, acti
     <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_45%),linear-gradient(135deg,_#f8fbff_0%,_#eef7ff_100%)] text-foreground dark:bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.15),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_100%)]">
       <div className="mx-auto flex w-full max-w-full flex-col lg:flex-row">
         <aside className={`${sidebarOpen ? 'hidden lg:flex' : 'hidden'} shrink-0 border-r border-slate-200/70 px-4 py-5 lg:flex-col dark:border-slate-800/70 lg:z-40 lg:overflow-y-auto lg:transition-all lg:duration-200 bg-white/60 dark:bg-slate-950/60 ${sidebarOpen ? 'lg:fixed lg:top-0 lg:left-0 lg:bottom-0 lg:w-64' : ''}`}>
-          {/* Brand */}
           <div className="flex items-center gap-2.5 px-1 py-2">
             <BrandBadge compact />
             <div className="min-w-0">
@@ -159,7 +157,6 @@ export function AppShell({ children, user, currentPath, title, description, acti
             </div>
           </div>
 
-          {/* Profile card */}
           <div className="mt-4 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
             <div className="flex items-center gap-3">
               <div className="relative shrink-0">
@@ -197,21 +194,24 @@ export function AppShell({ children, user, currentPath, title, description, acti
         </aside>
 
         <div className={`flex-1 min-w-0 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
-          <header ref={headerRef} className={`fixed inset-x-0 top-0 z-50 ${sidebarOpen ? 'lg:left-64 lg:right-0' : 'lg:left-0 lg:right-0'} border-b border-white/40 bg-white/95 px-3 py-3 backdrop-blur-xl shadow-sm shadow-slate-900/5 transition-colors duration-200 sm:px-4 lg:px-6 dark:border-slate-700/40 dark:bg-slate-950/95`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
+          <header
+            ref={headerRef}
+            className={`fixed inset-x-0 top-0 z-50 ${sidebarOpen ? 'lg:left-64 lg:right-0' : 'lg:left-0 lg:right-0'} border-b border-slate-200/70 bg-white/95 px-3 py-2 backdrop-blur-xl shadow-sm shadow-slate-900/5 transition-colors duration-200 sm:px-4 sm:py-3 lg:px-6 dark:border-slate-800/70 dark:bg-slate-950/95`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
                   <SheetTrigger asChild>
                     <Button
                       variant="outline"
-                      size="lg"
-                      className="lg:hidden rounded-2xl border-white/50 bg-white/95 text-slate-900 shadow-sm dark:bg-slate-900/90 dark:text-slate-100"
+                      size="icon-sm"
+                      className="shrink-0 rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm lg:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       aria-label="Open navigation menu"
                     >
-                      <Menu className="h-5 w-5" />
+                      <Menu className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="left" className="w-[85vw] max-w-xs p-5">
+                  <SheetContent side="left" className="w-[82vw] max-w-xs p-4">
                     <div className="flex items-center gap-2.5 pb-4">
                       <BrandBadge compact />
                       <div className="min-w-0">
@@ -225,25 +225,25 @@ export function AppShell({ children, user, currentPath, title, description, acti
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  className="hidden rounded-2xl border-white/50 bg-white/95 text-slate-900 shadow-sm dark:bg-slate-900/90 dark:text-slate-100 lg:inline-flex"
+                  className="hidden shrink-0 rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm lg:inline-flex dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
                   onClick={() => setSidebarOpen((prev) => !prev)}
                 >
                   {sidebarOpen ? <XIcon className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
                 </Button>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">ActionLoop</p>
-                  <h1 className="text-2xl font-black text-slate-950 dark:text-slate-100 sm:text-3xl bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-transparent">{description || 'Stay on top of every next step'}</h1>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{title || 'Workspace'}</p>
+                <div className="min-w-0 flex-1">
+                  <h1 className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100 sm:text-base">{title || 'Workspace'}</h1>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{description || 'Stay on top of every next step'}</p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex shrink-0 items-center gap-1.5">
                 {actions}
                 <Button
                   variant="outline"
                   size="icon-sm"
                   onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  className="rounded-2xl"
+                  className="rounded-xl"
+                  aria-label={themeToggleLabel}
                 >
                   <ThemeToggleIcon className="h-4 w-4" />
                 </Button>
@@ -251,7 +251,7 @@ export function AppShell({ children, user, currentPath, title, description, acti
             </div>
           </header>
 
-          <main className="w-full max-w-full px-3 pb-8 sm:px-6 sm:pb-8 lg:px-8 lg:pb-10" style={{ paddingTop: `${headerHeight + 16}px` }}>
+          <main className="w-full max-w-full px-3 pb-6 sm:px-6 sm:pb-8 lg:px-8 lg:pb-10" style={{ paddingTop: `${headerHeight + 12}px` }}>
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
               {children}
             </motion.div>

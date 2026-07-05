@@ -14,7 +14,7 @@ import { Mistral } from '@mistralai/mistralai';
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 const mistralApiKey = process.env.MISTRAL_API_KEY ? process.env.MISTRAL_API_KEY : null;
-const mistralModel = process.env.MISTRAL_MODEL?.trim() || 'mistral-7b-instruct';
+const mistralModel = process.env.MISTRAL_MODEL?.trim() || 'mistral-small-latest';
 const mistral = mistralApiKey ? new Mistral({ apiKey: mistralApiKey }) : null;
 
 const actionItemSchema = {
@@ -36,6 +36,7 @@ const extractionSchema = {
     summary: { type: 'string' },
     desired_outcome: { type: ['string', 'null'] },
     decision: { type: ['string', 'null'] },
+    notes: { type: ['string', 'null'] },
     action_items: {
       type: 'array',
       items: actionItemSchema,
@@ -55,8 +56,17 @@ interface ExtractedMeeting {
   summary: string;
   desired_outcome?: string | null;
   decision?: string | null;
+  notes?: string | null;
   action_items: ActionItem[];
 }
+
+const EXTRACTION_INSTRUCTIONS = `Analyze the meeting transcript and extract:
+- A concise meeting title (if none, generate one).
+- A summary (1-3 sentences).
+- The desired outcome of the meeting.
+- The decision made during the meeting.
+- Notes: any side comments, caveats, context, blockers, or FYIs mentioned that are NOT a decision and NOT an action item someone is assigned to do (for example: "this depends on legal sign-off", "budget numbers are still pending finance", "this is a tentative date"). Use null if there is nothing that fits this.
+- Action items with description, assignee email (from context, or "unassigned@example.com" if unclear), and due date (YYYY-MM-DD format if mentioned, otherwise null).`;
 
 function parseExtractedMeeting(rawText: string): ExtractedMeeting {
   const cleanText = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -137,6 +147,14 @@ function parseExtractedMeeting(rawText: string): ExtractedMeeting {
         : typeof (parsed as any).decisionMade === 'string'
         ? (parsed as any).decisionMade
         : null,
+    notes:
+      typeof parsed.notes === 'string'
+        ? parsed.notes
+        : typeof (parsed as any).side_notes === 'string'
+        ? (parsed as any).side_notes
+        : typeof (parsed as any).additional_notes === 'string'
+        ? (parsed as any).additional_notes
+        : null,
     action_items: actionItems,
   };
 }
@@ -195,6 +213,8 @@ async function extractWithMistral(transcript: string): Promise<ExtractedMeeting>
     throw new Error('Mistral is not configured.');
   }
 
+  console.log('[extractWithMistral] using model', mistralModel);
+
   const response = await mistral.chat.complete({
     model: mistralModel,
     temperature: 0.2,
@@ -206,7 +226,7 @@ async function extractWithMistral(transcript: string): Promise<ExtractedMeeting>
       },
       {
         role: 'user',
-        content: `Analyze the meeting transcript and extract a concise title, a 1-3 sentence summary, the desired outcome, a decision, and action items. Assign each action item to a team member with plausible names and email addresses. Use "unassigned@example.com" when assignee details are unclear. Use null for missing due dates.\n\nTranscript:\n${transcript}`,
+        content: `${EXTRACTION_INSTRUCTIONS}\n\nTranscript:\n${transcript}`,
       },
     ],
     responseFormat: {
@@ -225,6 +245,8 @@ async function extractWithMistral(transcript: string): Promise<ExtractedMeeting>
 }
 
 function extractLocally(transcript: string): ExtractedMeeting {
+  console.warn('[extractLocally] falling back to local (non-AI) extraction — check AI provider logs above');
+
   const sentences = transcript
     .split(/[\.\n]+/)
     .map((s) => s.trim())
@@ -268,12 +290,16 @@ function extractLocally(transcript: string): ExtractedMeeting {
 
   const desiredOutcomeMatch = transcript.match(/desired outcome\s*[:\-]\s*([^\n]+)/i);
   const decisionMatch = transcript.match(/decision\s*[:\-]\s*([^\n]+)/i);
+  // Local fallback can only reliably catch notes that are explicitly labeled
+  // in the transcript — it has no way to infer implicit "side comments".
+  const notesMatch = transcript.match(/notes?\s*[:\-]\s*([^\n]+)/i);
 
   return {
     title: titleGuess,
     summary: summaryGuess,
     desired_outcome: desiredOutcomeMatch ? desiredOutcomeMatch[1].trim() : null,
     decision: decisionMatch ? decisionMatch[1].trim() : null,
+    notes: notesMatch ? notesMatch[1].trim() : null,
     action_items,
   };
 }
@@ -288,19 +314,26 @@ async function extractWithAnyAI(transcript: string): Promise<ExtractedMeeting> {
   const errors: string[] = [];
   for (const provider of providers) {
     if (!provider.available) {
+      console.warn(`[extractWithAnyAI] ${provider.name} not configured (missing API key) — skipping`);
       continue;
     }
 
     try {
-      return await provider.fn(transcript);
+      console.log(`[extractWithAnyAI] attempting extraction with ${provider.name}`);
+      const result = await provider.fn(transcript);
+      console.log(`[extractWithAnyAI] ${provider.name} succeeded`);
+      return result;
     } catch (err) {
-      errors.push(`${provider.name} failed: ${String((err as Error)?.message ?? err)}`);
+      const message = `${provider.name} failed: ${String((err as Error)?.message ?? err)}`;
+      console.error('[extractWithAnyAI]', message, err);
+      errors.push(message);
     }
   }
 
-  if (errors.length) {
-    return extractLocally(transcript);
-  }
+  console.error(
+    '[extractWithAnyAI] All AI providers unavailable or failed — using local (non-AI) fallback extractor.',
+    errors.length ? errors : 'No providers were configured at all (check MISTRAL_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY).'
+  );
 
   return extractLocally(transcript);
 }
@@ -320,7 +353,7 @@ async function extractWithOpenAI(transcript: string): Promise<ExtractedMeeting> 
       },
       {
         role: 'user',
-        content: `Analyze the meeting transcript and extract a concise title, a 1-3 sentence summary, the desired outcome, a decision, and action items. Assign each action item to a team member with plausible names and email addresses. Use "unassigned@example.com" when assignee details are unclear. Use null for missing due dates.\n\nTranscript:\n${transcript}`,
+        content: `${EXTRACTION_INSTRUCTIONS}\n\nTranscript:\n${transcript}`,
       },
     ],
     text: {
@@ -358,6 +391,7 @@ async function extractWithGemini(transcript: string): Promise<ExtractedMeeting> 
   "summary": "1-3 sentence summary",
   "desired_outcome": "meeting desired outcome or null",
   "decision": "meeting decision or null",
+  "notes": "side comments, caveats, blockers, or FYIs that are not a decision or action item, or null",
   "action_items": [
     {
       "description": "task description",
@@ -367,12 +401,7 @@ async function extractWithGemini(transcript: string): Promise<ExtractedMeeting> 
   ]
 }
 
-Extract:
-- A concise meeting title (if none, generate one).
-- A summary (1-3 sentences).
-- The desired outcome of the meeting.
-- The decision made during the meeting.
-- Action items with description, assignee email (from context, or "unassigned@example.com" if unclear), and due date (YYYY-MM-DD format if mentioned, otherwise null).
+${EXTRACTION_INSTRUCTIONS}
 
 Transcript:
 ${transcript}`;
@@ -416,6 +445,39 @@ function getErrorMessage(error: unknown): string {
   return String(error ?? 'Unknown error');
 }
 
+// Recompute a meeting's outcome_score from its action items' completion rate.
+// Called whenever an action item's status changes.
+async function recalculateOutcomeScore(client: any, meetingId: string) {
+  const { data: items, error } = await client
+    .from('action_items')
+    .select('status')
+    .eq('meeting_id', meetingId);
+
+  if (error) {
+    console.error('[recalculateOutcomeScore] failed to load action items', error);
+    return null;
+  }
+
+  if (!items || !items.length) {
+    return null;
+  }
+
+  const done = items.filter((item: { status: string }) => item.status === 'done').length;
+  const score = Math.round((done / items.length) * 100);
+
+  const { error: updateError } = await client
+    .from('meetings')
+    .update({ outcome_score: score })
+    .eq('id', meetingId);
+
+  if (updateError) {
+    console.error('[recalculateOutcomeScore] failed to update meeting outcome_score', updateError);
+    return null;
+  }
+
+  return score;
+}
+
 export async function createMeetingAndExtractActions(formData: FormData) {
   const supabase = await createClient();
   let user = null as any;
@@ -456,13 +518,23 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     throw new Error('AI response missing required fields. Try again.');
   }
 
+  // Manual "Notes" field (if the user typed one) always wins over the AI's
+  // inferred notes — the AI-extracted notes are only used as a fallback when
+  // the user left the field blank.
+  const resolvedNotes = notes?.trim()
+    ? notes.trim()
+    : typeof output.notes === 'string' && output.notes.trim()
+    ? output.notes.trim()
+    : null;
+
   const meetingPayload = {
     ...(user ? { user_id: user.id } : {}),
     ...(teamId ? { team_id: teamId } : {}),
     title: output.title || title || 'Untitled Meeting',
     transcript,
     summary: output.summary,
-    ...(notes?.trim() ? { notes: notes.trim() } : {}),
+    outcome_score: 0,
+    ...(resolvedNotes ? { notes: resolvedNotes } : {}),
     ...(desiredOutcome?.trim()
       ? { desired_outcome: desiredOutcome.trim() }
       : typeof output.desired_outcome === 'string' && output.desired_outcome.trim()
@@ -488,6 +560,13 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     }
 
     if (missingCols.length === 0) return payload;
+
+    console.error(
+      `[createMeetingAndExtractActions] Database is missing column(s): ${missingCols.join(', ')}. ` +
+        `These fields will NOT be saved until you apply the relevant migration ` +
+        `(e.g. supabase/migrations/20260702160000_meeting_outcomes.sql or 20260704120000_add_meeting_notes.sql).`
+    );
+
     const result = { ...payload };
     for (const col of missingCols) {
       if (Object.prototype.hasOwnProperty.call(result, col)) {
@@ -593,6 +672,9 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     );
   }
 
+  // Initialize outcome_score at 0% (no items done yet) now that items exist.
+  await recalculateOutcomeScore(writeClient, meeting.id);
+
   return meeting.id;
 }
 
@@ -620,6 +702,10 @@ export async function markActionItemDone(actionItemId: string) {
   if (error) throw error;
 
   if (item?.meeting_id) {
+    // Recalculate the meeting's follow-through / outcome score based on the
+    // new completion ratio of its action items.
+    await recalculateOutcomeScore(client, item.meeting_id);
+
     const { data: meeting } = await client.from('meetings').select('id, title, team_id').eq('id', item.meeting_id).maybeSingle();
     if (meeting?.team_id) {
       const { data: remainingItems } = await client

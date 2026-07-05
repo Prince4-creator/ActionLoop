@@ -105,14 +105,28 @@ export async function POST(req: Request) {
       return missingCols;
     };
 
+    let droppedColumns: string[] = [];
+
     // If update failed due to missing columns in the DB schema, strip those keys and retry.
     if (updateError) {
       const missingCols = getMissingCols(updateError.message);
       if (missingCols.length > 0) {
+        droppedColumns = missingCols.filter((col) => Object.prototype.hasOwnProperty.call(updates, col));
+
         for (const col of missingCols) {
           if (Object.prototype.hasOwnProperty.call(updates, col)) {
             delete updates[col];
           }
+        }
+
+        if (droppedColumns.length) {
+          // This used to fail silently — that's why desired_outcome / decision /
+          // outcome_score looked like they "weren't saving". Log it loudly now.
+          console.error(
+            `[api/meetings/update] Database is missing column(s): ${droppedColumns.join(', ')}. ` +
+              `Apply migration supabase/migrations/20260702160000_meeting_outcomes.sql (or run: ` +
+              `select column_name from information_schema.columns where table_name = 'meetings') to fix this.`
+          );
         }
 
         if (Object.keys(updates).length === 0) {
@@ -134,6 +148,15 @@ export async function POST(req: Request) {
       revalidatePath(`/meetings/${meetingId}`);
     } catch {
       // best-effort revalidation
+    }
+
+    if (droppedColumns.length) {
+      // Let the client know the save was partial, so the UI can warn the user
+      // instead of showing a false "Meeting updated" success toast.
+      return NextResponse.json({
+        success: true,
+        warning: `These fields could not be saved because the database schema is out of date: ${droppedColumns.join(', ')}.`,
+      });
     }
 
     return NextResponse.json({ success: true });
