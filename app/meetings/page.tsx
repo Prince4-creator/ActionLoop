@@ -8,7 +8,11 @@ import { Badge } from '@/components/ui/badge';
 import { CalendarDays, Clock3 } from 'lucide-react';
 import { getTeamIdForUser } from '@/lib/teams';
 
-export default async function MeetingsPage({ searchParams }: { searchParams: { q?: string } }) {
+export default async function MeetingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const supabase = await createClient();
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
@@ -16,7 +20,8 @@ export default async function MeetingsPage({ searchParams }: { searchParams: { q
 
   if (!user) redirect('/login');
 
-  const query = String(searchParams?.q ?? '').trim();
+  const resolvedSearchParams = await searchParams;
+  const query = String(resolvedSearchParams?.q ?? '').trim();
   const safeQuery = query.replace(/'/g, "''").replace(/%/g, '\\%');
   const searchFilter = safeQuery
     ? `title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%,notes.ilike.%${safeQuery}%`
@@ -117,7 +122,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: { q
         ) : (
           <Card className="rounded-3xl border-dashed border-slate-200 bg-white/70 p-10 text-center shadow-sm backdrop-blur">
             <Clock3 className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-            <p className="font-medium">No meetings yet.</p>
+            <p className="font-medium">{query ? 'No meetings match your search.' : 'No meetings yet.'}</p>
           </Card>
         )}
       </div>
