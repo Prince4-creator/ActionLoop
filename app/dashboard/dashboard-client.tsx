@@ -64,8 +64,8 @@ export default function DashboardClient({
     router.push('/login');
   };
 
-  const heroClasses = isAdmin
-    ? 'from-blue-600 via-indigo-600 to-violet-600'
+ const heroClasses = isAdmin
+    ? 'from-indigo-600 via-violet-600 to-fuchsia-600'
     : 'from-emerald-600 via-teal-600 to-cyan-600';
 
   const handleDone = async (itemId: string) => {
@@ -112,8 +112,11 @@ export default function DashboardClient({
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_45%),linear-gradient(135deg,_#f8fbff_0%,_#eef7ff_100%)]">
+ return (
+    <div className={isAdmin
+      ? 'min-h-screen'
+      : 'min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_45%),linear-gradient(135deg,_#f8fbff_0%,_#eef7ff_100%)]'
+    }>
       <div className="mx-auto flex w-full max-w-full flex-1 flex-col p-6 lg:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -193,7 +196,10 @@ export default function DashboardClient({
         </Card>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
-          <Card className="border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100">
+        <Card className={isAdmin
+  ? 'border-indigo-100 bg-white text-slate-900 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white dark:backdrop-blur'
+  : 'border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
+}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -210,7 +216,10 @@ export default function DashboardClient({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100">
+          <Card className={isAdmin
+  ? 'border-white/10 bg-white/5 text-white shadow-sm backdrop-blur'
+  : 'border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
+}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -223,7 +232,10 @@ export default function DashboardClient({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100">
+          <Card className={isAdmin
+  ? 'border-white/10 bg-white/5 text-white shadow-sm backdrop-blur'
+  : 'border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
+}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -239,8 +251,10 @@ export default function DashboardClient({
         </div>
 
         <div className="mt-8 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 dark:text-slate-100">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+<div className={isAdmin
+  ? 'rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-sm backdrop-blur'
+  : 'rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 dark:text-slate-100'
+}>            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{isAdmin ? 'Workspace meetings' : 'Recent meetings'}</h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400">{isAdmin ? 'A quick view of everything currently in the workspace.' : 'Pick up where you left off.'}</p>
@@ -283,7 +297,10 @@ export default function DashboardClient({
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 dark:text-slate-100">
+          <div className={isAdmin
+  ? 'rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-sm backdrop-blur'
+  : 'rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 dark:text-slate-100'
+}>
             <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Quick action items</h3>
