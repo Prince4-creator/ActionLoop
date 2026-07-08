@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import DashboardClient from './dashboard-client';
 import { isAdminUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/admin';
-import { getTeamIdForUser } from '@/lib/teams';
+import { getTeamIdsForUser, ensureDefaultTeamForUser } from '@/lib/teams';
 import { AppShell } from '@/components/app-shell';
 
 type MeetingSummary = {
@@ -33,15 +33,24 @@ export default async function DashboardPage() {
   }
 
   const isAdmin = isAdminUser(user);
-  const adminClient = isAdmin ? createAdminClient() : null;
-  const teamId = await getTeamIdForUser(supabase, user.id, user.email);
-
+  const adminClient = createAdminClient();
   const meetingsClient = isAdmin && adminClient ? adminClient : supabase;
-  const { data: meetings } = teamId
+
+  // A user can belong to more than one team (e.g. their own default team
+  // plus a team they were invited into). We need meetings from ALL of them,
+  // not just the first one, or admin-created meetings silently disappear
+  // for members whose "first" team differs from the one the meeting lives in.
+  let teamIds = await getTeamIdsForUser(supabase, user.id);
+  if (!teamIds.length) {
+    const defaultTeamId = await ensureDefaultTeamForUser(supabase, user.id, user.email);
+    teamIds = defaultTeamId ? [defaultTeamId] : [];
+  }
+
+  const { data: meetings } = teamIds.length
     ? await meetingsClient
         .from('meetings')
         .select('id, user_id, title, summary, created_at, outcome_score')
-        .eq('team_id', teamId)
+        .in('team_id', teamIds)
         .order('created_at', { ascending: false })
     : { data: [] as Array<{ id: string; user_id: string; title: string | null; summary: string | null; created_at?: string; outcome_score: number }> };
 

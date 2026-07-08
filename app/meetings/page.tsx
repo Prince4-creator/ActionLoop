@@ -6,7 +6,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CalendarDays, Clock3 } from 'lucide-react';
-import { getTeamIdForUser } from '@/lib/teams';
+import { getTeamIdsForUser, ensureDefaultTeamForUser } from '@/lib/teams';
 
 export default async function MeetingsPage({
   searchParams,
@@ -27,7 +27,12 @@ export default async function MeetingsPage({
     ? `title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%,notes.ilike.%${safeQuery}%`
     : null;
 
-  const teamId = await getTeamIdForUser(client, user.id, user.email);
+  let teamIds = await getTeamIdsForUser(client, user.id);
+  if (!teamIds.length) {
+    const defaultTeamId = await ensureDefaultTeamForUser(supabase, user.id, user.email);
+    teamIds = defaultTeamId ? [defaultTeamId] : [];
+  }
+
   const baseSelect = 'id, title, summary, notes, created_at, outcome_score';
   const fallbackSelect = 'id, title, summary, created_at, outcome_score';
 
@@ -35,8 +40,8 @@ export default async function MeetingsPage({
 
   try {
     let meetingsQuery = client.from('meetings').select(baseSelect);
-    if (teamId) {
-      meetingsQuery = meetingsQuery.eq('team_id', teamId);
+    if (teamIds.length) {
+      meetingsQuery = meetingsQuery.in('team_id', teamIds);
     }
     if (searchFilter) {
       meetingsQuery = meetingsQuery.or(searchFilter);
@@ -46,8 +51,8 @@ export default async function MeetingsPage({
     meetings = response.data;
   } catch {
     let meetingsQuery = client.from('meetings').select(fallbackSelect);
-    if (teamId) {
-      meetingsQuery = meetingsQuery.eq('team_id', teamId);
+    if (teamIds.length) {
+      meetingsQuery = meetingsQuery.in('team_id', teamIds);
     }
     if (searchFilter) {
       meetingsQuery = meetingsQuery.or(`title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%`);
@@ -57,7 +62,7 @@ export default async function MeetingsPage({
     meetings = response.data;
   }
 
-  if ((!meetings || meetings.length === 0) && !teamId && user.id) {
+  if ((!meetings || meetings.length === 0) && !teamIds.length && user.id) {
     try {
       const fallbackQuery = client
         .from('meetings')

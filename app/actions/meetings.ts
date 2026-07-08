@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 import { isAdminUser } from '@/lib/auth';
-import { getTeamIdForUser } from '@/lib/teams';
+import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mistral } from '@mistralai/mistralai';
@@ -422,6 +422,31 @@ ${transcript}`;
   }
 }
 
+function resolveAssigneeEmail(
+  rawEmail: string,
+  description: string,
+  teamMembers: Array<{ email: string | null }>
+): string {
+  // If AI already gave a real, non-fabricated email, keep it
+  if (rawEmail && !rawEmail.toLowerCase().endsWith('@example.com')) {
+    return rawEmail;
+  }
+
+  // Try to match the speaker name in the description to a real team member's email
+  const speakerMatch = description.match(/^([A-Z][a-z]+):/);
+  const nameGuess = speakerMatch?.[1]?.toLowerCase();
+
+  if (nameGuess) {
+    const match = teamMembers.find((member) =>
+      member.email?.toLowerCase().startsWith(nameGuess)
+    );
+    if (match?.email) return match.email;
+  }
+
+  return rawEmail || 'unassigned@example.com';
+}
+
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -673,7 +698,12 @@ export async function createMeetingAndExtractActions(formData: FormData) {
   }
 
   // Initialize outcome_score at 0% (no items done yet) now that items exist.
+  // Initialize outcome_score at 0% (no items done yet) now that items exist.
   await recalculateOutcomeScore(writeClient, meeting.id);
+
+  revalidatePath('/dashboard');
+  revalidatePath('/meetings');
+  revalidatePath('/team');
 
   return meeting.id;
 }

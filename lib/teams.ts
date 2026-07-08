@@ -164,3 +164,28 @@ export async function getTeamIdForUser(
 
   return ensureDefaultTeamForUser(supabase, userId, email);
 }
+
+export async function getTeamIdsForUser(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string[]> {
+  const adminClient = createAdminClient();
+  const client = adminClient ?? supabase;
+
+  try {
+    const { data, error } = await client
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[teams] getTeamIdsForUser error', error);
+      return [];
+    }
+
+    return (data ?? []).map((row) => row.team_id).filter(Boolean);
+  } catch (error) {
+    console.error('[teams] getTeamIdsForUser threw', error);
+    return [];
+  }
+}
