@@ -148,23 +148,6 @@ export async function getTeamMembersWithEmails(
   }));
 }
 
-export async function getTeamIdForUser(
-  supabase: SupabaseClient,
-  userId: string,
-  email?: string | null
-) {
-  const membership = await getUserTeamMembership(supabase, userId);
-  if (membership?.team_id) {
-    return membership.team_id;
-  }
-
-  if (!email) {
-    return null;
-  }
-
-  return ensureDefaultTeamForUser(supabase, userId, email);
-}
-
 export async function getTeamIdsForUser(
   supabase: SupabaseClient,
   userId: string
@@ -188,4 +171,21 @@ export async function getTeamIdsForUser(
     console.error('[teams] getTeamIdsForUser threw', error);
     return [];
   }
+}
+
+export async function getTeamIdForUser(
+  supabase: SupabaseClient,
+  userId: string,
+  email?: string | null
+) {
+  const membership = await getUserTeamMembership(supabase, userId);
+  if (membership?.team_id) {
+    return membership.team_id;
+  }
+
+  if (!email) {
+    return null;
+  }
+
+  return ensureDefaultTeamForUser(supabase, userId, email);
 }

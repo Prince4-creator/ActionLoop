@@ -4,9 +4,7 @@ import { isAdminUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/admin';
 import MeetingDetailClient from './meeting-detail-client';
 import { AppShell } from '@/components/app-shell';
-import { getTeamIdForUser } from '@/lib/teams';
-
-type MeetingRecord = {
+import { getTeamIdsForUser } from '@/lib/teams';type MeetingRecord = {
   id: string;
   user_id: string;
   title?: string | null;
@@ -44,15 +42,15 @@ export default async function MeetingDetailPage({
   const isAdmin = isAdminUser(user);
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
-  const teamId = await getTeamIdForUser(client, user.id, user.email);
+  const teamIds = await getTeamIdsForUser(client, user.id);
 
   let meetingQuery = client
     .from('meetings')
     .select('*')
     .eq('id', meetingId);
 
-  if (teamId) {
-    meetingQuery = meetingQuery.eq('team_id', teamId);
+  if (teamIds.length) {
+    meetingQuery = meetingQuery.in('team_id', teamIds);
   }
 
   const meetingResult = await meetingQuery.maybeSingle<MeetingRecord>();
@@ -67,7 +65,8 @@ export default async function MeetingDetailPage({
     // from the error message and retry without those columns so the page still loads.
     const fallback = await client
       .from('meetings')
-          .select('id, user_id, title, summary, notes, desired_outcome, decision, outcome_score')
+      .select('id, user_id, title, summary, notes, desired_outcome, decision, outcome_score')
+      .eq('id', meetingId)
       .maybeSingle<MeetingRecord>();
 
     meeting = fallback.data;
@@ -89,12 +88,16 @@ export default async function MeetingDetailPage({
         // If all requested columns are missing, fall back to a minimal select.
         const safeSelect = colsToSelect || 'id, user_id, title, summary';
 
-        const retry = await client
+        let retryQuery = client
           .from('meetings')
           .select(safeSelect)
-          .eq('id', meetingId)
-          .eq('user_id', user.id)
-          .maybeSingle<Partial<MeetingRecord>>();
+          .eq('id', meetingId);
+
+        if (teamIds.length) {
+          retryQuery = retryQuery.in('team_id', teamIds);
+        }
+
+        const retry = await retryQuery.maybeSingle<Partial<MeetingRecord>>();
 
         meeting = retry.data && retry.data.id && retry.data.user_id ? (retry.data as MeetingRecord) : null;
         meetingError = retry.error ?? null;

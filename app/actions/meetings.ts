@@ -6,8 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 import { isAdminUser } from '@/lib/auth';
-import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';
-import OpenAI from 'openai';
+import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mistral } from '@mistralai/mistralai';
 
@@ -157,6 +156,47 @@ function parseExtractedMeeting(rawText: string): ExtractedMeeting {
         : null,
     action_items: actionItems,
   };
+}
+
+function normalizeEmailLocalPart(email: string) {
+  return email.split('@')[0]?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? '';
+}
+
+// Matches an AI-guessed assignee email against the real team roster.
+// Exact email match wins first; otherwise we try matching the "local part"
+// (the bit before @) since the AI often guesses firstname@example.com while
+// the real team member has firstname@company.com. If nothing matches, the
+// item falls back to unassigned@example.com instead of silently emailing
+// a made-up address that belongs to nobody on the team.
+function resolveAssigneeEmail(
+  candidateEmail: string,
+  teamMembers: Array<{ email: string | null }>
+): string {
+  const normalizedCandidate = candidateEmail.trim().toLowerCase();
+  const memberEmails = teamMembers
+    .map((member) => member.email)
+    .filter((email): email is string => Boolean(email));
+
+  if (!normalizedCandidate) {
+    return 'unassigned@example.com';
+  }
+
+  const exactMatch = memberEmails.find((email) => email.toLowerCase() === normalizedCandidate);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const candidateLocalPart = normalizeEmailLocalPart(normalizedCandidate);
+  if (candidateLocalPart) {
+    const localPartMatch = memberEmails.find(
+      (email) => normalizeEmailLocalPart(email) === candidateLocalPart
+    );
+    if (localPartMatch) {
+      return localPartMatch;
+    }
+  }
+
+  return 'unassigned@example.com';
 }
 
 function normalizeMistralContent(content: unknown): string {
@@ -422,31 +462,6 @@ ${transcript}`;
   }
 }
 
-function resolveAssigneeEmail(
-  rawEmail: string,
-  description: string,
-  teamMembers: Array<{ email: string | null }>
-): string {
-  // If AI already gave a real, non-fabricated email, keep it
-  if (rawEmail && !rawEmail.toLowerCase().endsWith('@example.com')) {
-    return rawEmail;
-  }
-
-  // Try to match the speaker name in the description to a real team member's email
-  const speakerMatch = description.match(/^([A-Z][a-z]+):/);
-  const nameGuess = speakerMatch?.[1]?.toLowerCase();
-
-  if (nameGuess) {
-    const match = teamMembers.find((member) =>
-      member.email?.toLowerCase().startsWith(nameGuess)
-    );
-    if (match?.email) return match.email;
-  }
-
-  return rawEmail || 'unassigned@example.com';
-}
-
-
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -654,9 +669,11 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     throw new Error('Failed to create meeting');
   }
 
+  const teamMembers = teamId ? await getTeamMembersWithEmails(writeClient, teamId) : [];
+
   const actionItems = output.action_items.map((item: ActionItem) => ({
     meeting_id: meeting.id,
-    assignee_email: item.assignee_email || 'unassigned@example.com',
+    assignee_email: resolveAssigneeEmail(item.assignee_email || '', teamMembers),
     description: item.description,
     due_date: item.due_date ? item.due_date : null,
     status: 'pending',
@@ -666,17 +683,13 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     .from('action_items')
     .insert(actionItems);
 
-  if (itemsError) {
-    console.error('[meetings] insert action_items error', itemsError);
-  }
-
   if (itemsError && teamId) {
     const { error: fallbackItemsError } = await writeClient
       .from('action_items')
       .insert(
         output.action_items.map((item: ActionItem) => ({
           meeting_id: meeting.id,
-          assignee_email: item.assignee_email || 'unassigned@example.com',
+          assignee_email: resolveAssigneeEmail(item.assignee_email || '', teamMembers),
           description: item.description,
           due_date: item.due_date || null,
           status: 'pending',
@@ -697,7 +710,6 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     );
   }
 
-  // Initialize outcome_score at 0% (no items done yet) now that items exist.
   // Initialize outcome_score at 0% (no items done yet) now that items exist.
   await recalculateOutcomeScore(writeClient, meeting.id);
 
