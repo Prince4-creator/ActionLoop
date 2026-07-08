@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 import { isAdminUser } from '@/lib/auth';
 import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';import OpenAI from 'openai';
+import { sendTeamReminder } from '@/lib/reminders';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mistral } from '@mistralai/mistralai';
 
@@ -708,6 +709,32 @@ export async function createMeetingAndExtractActions(formData: FormData) {
       'Action items insert failed: ' +
         (itemsError.message ?? JSON.stringify(itemsError))
     );
+  }
+
+  // Notify assignees immediately when the meeting is created, instead of
+  // waiting for someone to click "Send reminders" later.
+  if (teamId) {
+    const { data: createdMeetingForNotify } = await writeClient
+      .from('meetings')
+      .select('id, title, creator_email, team_id')
+      .eq('id', meeting.id)
+      .maybeSingle();
+
+    if (createdMeetingForNotify) {
+      for (const item of actionItems) {
+        if (!item.assignee_email || item.assignee_email === 'unassigned@example.com') continue;
+        try {
+          await sendTeamReminder({
+            supabase: writeClient,
+            item: { ...item, id: item.meeting_id, meeting_id: meeting.id },
+            meeting: createdMeetingForNotify,
+            isEscalation: false,
+          });
+        } catch (err) {
+          console.error('[meetings] initial notification failed for', item.assignee_email, err);
+        }
+      }
+    }
   }
 
   // Initialize outcome_score at 0% (no items done yet) now that items exist.
