@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Icons } from '@/components/ui/icons';
+import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
@@ -112,6 +113,24 @@ export default function DashboardClient({
     }
   };
 
+  const now = new Date();
+  const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const dueThisWeek = pendingItems
+    .filter((item) => {
+      if (!item.due_date) return false;
+      const due = new Date(item.due_date);
+      return due >= now && due <= weekFromNow;
+    })
+    .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+
+  const daysUntil = (dateStr: string) => {
+    const diffMs = new Date(dateStr).getTime() - now.getTime();
+    const days = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+    if (days <= 0) return 'Today';
+    if (days === 1) return 'Tomorrow';
+    return `In ${days} days`;
+  };
+
  return (
     <div className={isAdmin
       ? 'min-h-screen'
@@ -120,8 +139,9 @@ export default function DashboardClient({
       <div className="mx-auto flex w-full max-w-full flex-1 flex-col p-6 lg:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium uppercase tracking-[0.25em] text-slate-500">Meeting workspace</p>
-            <h1 className="text-3xl font-semibold text-slate-900">{isAdmin ? 'Admin Control Center' : 'Your Meeting Hub'}</h1>
+            <h1 className={cn('text-3xl font-semibold', isAdmin ? 'text-white' : 'text-slate-900')}>
+             {isAdmin ? 'Admin Control Center' : 'Your Meeting Hub'}
+            </h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge className={isAdmin ? 'rounded-full bg-blue-100 text-blue-800 hover:bg-blue-100' : 'rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100'}>
@@ -368,6 +388,40 @@ export default function DashboardClient({
             )}
           </div>
         </div>
+
+        {dueThisWeek.length > 0 ? (
+          <div
+            className={
+              isAdmin
+                ? 'mt-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-sm backdrop-blur'
+                : 'mt-6 rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 dark:text-slate-100'
+            }
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Due this week</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{dueThisWeek.length} item{dueThisWeek.length === 1 ? '' : 's'} coming up</p>
+              </div>
+              <Badge className="rounded-full bg-amber-100 text-amber-800">{dueThisWeek.length}</Badge>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {dueThisWeek.slice(0, 6).map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/60"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-2">{item.description}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.assignee_email}</p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 rounded-full text-xs">
+                    {daysUntil(item.due_date!)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

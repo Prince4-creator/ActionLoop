@@ -23,6 +23,7 @@ import {
   Activity,
   CheckSquare,
   Square,
+  Download,
 } from 'lucide-react';
 import SetupTotpClient from './setup-totp/setup-totp-client';
 import { describeAuditAction, type AuditLogEntry } from '@/lib/audit';
@@ -211,6 +212,22 @@ export default function AdminDashboardClient({
     } finally {
       setBulkPending(false);
     }
+  };
+
+  const handleExportUsers = () => {
+    const header = ['Email', 'Role', 'Updated At'];
+    const rows = filtered.map((p) => [p.email ?? '', p.role || 'member', p.updated_at ?? '']);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `actionloop-users-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success('Users exported');
   };
 
   const statCards = [
@@ -402,6 +419,15 @@ export default function AdminDashboardClient({
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
                 Clear
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={handleExportUsers}
+                disabled={!filtered.length}
+              >
+                <Download className="mr-2 h-4 w-4" /> Export CSV
               </Button>
             </div>
           </div>

@@ -16,37 +16,35 @@ export default async function AdminPage() {
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
-  const { data: profiles, error } = await supabase
-    .from('profiles')
-    .select('id, email, role, updated_at')
-    .order('email');
+  const [
+    profilesResult,
+    meetingRequestsResult,
+    teamsResult,
+    meetingsResult,
+    actionItemsResult,
+    pendingActionItemsResult,
+    auditLogResult,
+  ] = await Promise.all([
+    supabase.from('profiles').select('id, email, role, updated_at').order('email'),
+    client.from('meeting_requests').select('id', { count: 'exact', head: true }),
+    client.from('teams').select('id', { count: 'exact', head: true }),
+    client.from('meetings').select('id', { count: 'exact', head: true }),
+    client.from('action_items').select('id', { count: 'exact', head: true }),
+    client.from('action_items').select('id', { count: 'exact', head: true }).in('status', ['pending', 'overdue']),
+    client
+      .from('admin_audit_log')
+      .select('id, actor_email, action, target_type, target_id, details, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
 
-  const { count: meetingRequestsCount, error: meetingRequestsError } = await client
-    .from('meeting_requests')
-    .select('id', { count: 'exact', head: true });
-
-  const { count: teamsCount } = await client
-    .from('teams')
-    .select('id', { count: 'exact', head: true });
-
-  const { count: meetingsCount } = await client
-    .from('meetings')
-    .select('id', { count: 'exact', head: true });
-
-  const { count: actionItemsCount } = await client
-    .from('action_items')
-    .select('id', { count: 'exact', head: true });
-
-  const { count: pendingActionItemsCount } = await client
-    .from('action_items')
-    .select('id', { count: 'exact', head: true })
-    .in('status', ['pending', 'overdue']);
-
-  const { data: auditLogData } = await client
-    .from('admin_audit_log')
-    .select('id, actor_email, action, target_type, target_id, details, created_at')
-    .order('created_at', { ascending: false })
-    .limit(20);
+  const { data: profiles, error } = profilesResult;
+  const { count: meetingRequestsCount, error: meetingRequestsError } = meetingRequestsResult;
+  const { count: teamsCount } = teamsResult;
+  const { count: meetingsCount } = meetingsResult;
+  const { count: actionItemsCount } = actionItemsResult;
+  const { count: pendingActionItemsCount } = pendingActionItemsResult;
+  const { data: auditLogData } = auditLogResult;
 
   const errorMessage = error ? String(error.message || 'Unable to load admin user data.') : null;
   const schemaError = errorMessage?.includes('profiles') || errorMessage?.includes('schema cache');

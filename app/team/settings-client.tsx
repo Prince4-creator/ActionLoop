@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { inviteTeamMember, getTeamInvites, revokeTeamInvite } from '@/app/actions/team-invites';
-import { Copy, Mail, Trash2, CheckCircle2, Clock } from 'lucide-react';
+import { inviteTeamMember, getTeamInvites, revokeTeamInvite, removeTeamMember, updateTeamMemberRole } from '@/app/actions/team-invites';
+import { Copy, Mail, Trash2, CheckCircle2, Clock, UserMinus, Crown, ShieldOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { getAppUrl } from '@/lib/app-url';
 
@@ -33,6 +33,7 @@ interface TeamSettingsClientProps {
   teamName: string;
   teamMembers: TeamMember[];
   userRole: string;
+  currentUserId: string;
 }
 
 export default function TeamSettingsClient({
@@ -40,18 +41,24 @@ export default function TeamSettingsClient({
   teamName,
   teamMembers,
   userRole,
+  currentUserId,
 }: TeamSettingsClientProps) {
   const [inviteEmail, setInviteEmail] = useState('');
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
+  const [members, setMembers] = useState(teamMembers);
+  const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(null);
 
   const isOwner = userRole === 'owner';
 
-  // Fetch invites on load
   useEffect(() => {
     fetchInvites();
   }, []);
+
+  useEffect(() => {
+    setMembers(teamMembers);
+  }, [teamMembers]);
 
   const fetchInvites = async () => {
     try {
@@ -112,6 +119,46 @@ export default function TeamSettingsClient({
     }
   };
 
+  const handleRemoveMember = async (member: TeamMember) => {
+    if (!confirm(`Remove ${member.email || 'this member'} from ${teamName}? They will lose access immediately.`)) {
+      return;
+    }
+
+    setPendingMemberAction(member.user_id);
+    try {
+      await removeTeamMember(teamId, member.user_id);
+      setMembers((current) => current.filter((m) => m.user_id !== member.user_id));
+      toast.success(`${member.email || 'Member'} removed from the team`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to remove member');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  };
+
+  const handleToggleRole = async (member: TeamMember) => {
+    const nextRole = member.role === 'owner' ? 'member' : 'owner';
+    const confirmMessage =
+      nextRole === 'owner'
+        ? `Make ${member.email || 'this member'} an owner? They will be able to invite and remove members.`
+        : `Remove owner privileges from ${member.email || 'this member'}?`;
+
+    if (!confirm(confirmMessage)) return;
+
+    setPendingMemberAction(member.user_id);
+    try {
+      await updateTeamMemberRole(teamId, member.user_id, nextRole);
+      setMembers((current) =>
+        current.map((m) => (m.user_id === member.user_id ? { ...m, role: nextRole } : m))
+      );
+      toast.success(`${member.email || 'Member'} is now ${nextRole === 'owner' ? 'an owner' : 'a member'}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update role');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'accepted':
@@ -146,20 +193,52 @@ export default function TeamSettingsClient({
         <CardContent className="space-y-4">
           <div className="rounded-lg border border-slate-200 bg-slate-50">
             <div className="divide-y">
-              {teamMembers.map((member) => (
-                <div key={member.user_id} className="flex items-center justify-between p-4">
-                  <div>
-                    <p className="font-medium text-slate-900">{member.email || 'Unknown'}</p>
-                    <p className="text-sm text-slate-500">
-                      {member.role.charAt(0).toUpperCase() + member.role.slice(1)} •{' '}
-                      {member.joined_at ? new Date(member.joined_at).toLocaleDateString() : 'Recently'}
-                    </p>
+              {members.map((member) => {
+                const isSelf = member.user_id === currentUserId;
+                const isPending = pendingMemberAction === member.user_id;
+                return (
+                  <div key={member.user_id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        {member.email || 'Unknown'} {isSelf ? <span className="text-xs text-slate-400">(you)</span> : null}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {member.role.charAt(0).toUpperCase() + member.role.slice(1)} •{' '}
+                        {member.joined_at ? new Date(member.joined_at).toLocaleDateString() : 'Recently'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className="rounded-full bg-blue-100 text-blue-800">
+                        {member.role === 'owner' ? '👑 Owner' : 'Member'}
+                      </Badge>
+                      {isOwner && !isSelf ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="rounded-full"
+                            disabled={isPending}
+                            onClick={() => handleToggleRole(member)}
+                            title={member.role === 'owner' ? 'Remove owner privileges' : 'Promote to owner'}
+                          >
+                            {member.role === 'owner' ? <ShieldOff className="h-4 w-4" /> : <Crown className="h-4 w-4" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="rounded-full text-red-500 hover:text-red-600"
+                            disabled={isPending}
+                            onClick={() => handleRemoveMember(member)}
+                            title="Remove from team"
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
-                  <Badge className="rounded-full bg-blue-100 text-blue-800">
-                    {member.role === 'owner' ? '👑 Owner' : 'Member'}
-                  </Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </CardContent>

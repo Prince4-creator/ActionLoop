@@ -30,12 +30,9 @@ export async function inviteTeamMember(teamId: string, email: string) {
     throw new Error('Only team owners can invite members');
   }
 
-  // Try to create invite - catch schema errors with helpful message
   try {
-    // Normalize email
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check if user already exists in team
     const { data: existingMember } = await client
       .from('team_members')
       .select('id')
@@ -50,7 +47,6 @@ export async function inviteTeamMember(teamId: string, email: string) {
       }
     }
 
-    // Check if invite already exists
     const { data: existingInvite } = await client
       .from('team_invites')
       .select('id, status')
@@ -62,11 +58,9 @@ export async function inviteTeamMember(teamId: string, email: string) {
       throw new Error('An invite for this email is already pending');
     }
 
-    // Create invite token
     const token = randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Create invite
     const { data: invite, error: inviteError } = await client
       .from('team_invites')
       .insert({
@@ -89,7 +83,6 @@ export async function inviteTeamMember(teamId: string, email: string) {
       throw new Error(`Failed to create invite: ${inviteError.message}`);
     }
 
-    // Send invite email
     try {
       const { data: team } = await client
         .from('teams')
@@ -106,7 +99,6 @@ export async function inviteTeamMember(teamId: string, email: string) {
       });
     } catch (emailError) {
       console.error('Failed to send invite email:', emailError);
-      // Don't fail the invite creation if email fails
     }
 
     return { success: true, inviteId: invite.id };
@@ -129,7 +121,6 @@ export async function acceptTeamInvite(token: string) {
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
-  // Find the invite
   const { data: invite, error: inviteError } = await client
     .from('team_invites')
     .select('*')
@@ -140,7 +131,6 @@ export async function acceptTeamInvite(token: string) {
     throw new Error('Invalid or expired invite');
   }
 
-  // Check invite status and expiration
   if (invite.status !== 'pending') {
     throw new Error(`Invite has already been ${invite.status}`);
   }
@@ -149,12 +139,10 @@ export async function acceptTeamInvite(token: string) {
     throw new Error('Invite has expired');
   }
 
-  // Check email matches
   if (invite.email.toLowerCase() !== user.email.toLowerCase()) {
     throw new Error('This invite is for a different email address');
   }
 
-  // Add user to team
   const { error: memberError } = await client
     .from('team_members')
     .insert({
@@ -167,7 +155,6 @@ export async function acceptTeamInvite(token: string) {
     throw new Error(`Failed to add team member: ${memberError.message}`);
   }
 
-  // Mark invite as accepted
   const { error: updateError } = await client
     .from('team_invites')
     .update({
@@ -194,7 +181,6 @@ export async function getTeamInvites(teamId: string) {
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
-  // Verify user is in the team
   const { data: membership } = await client
     .from('team_members')
     .select('role')
@@ -206,7 +192,6 @@ export async function getTeamInvites(teamId: string) {
     throw new Error('Not a member of this team');
   }
 
-  // Get invites
   const { data: invites, error } = await client
     .from('team_invites')
     .select('*')
@@ -231,7 +216,6 @@ export async function revokeTeamInvite(inviteId: string) {
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
-  // Get the invite to check permissions
   const { data: invite } = await client
     .from('team_invites')
     .select('team_id')
@@ -242,7 +226,6 @@ export async function revokeTeamInvite(inviteId: string) {
     throw new Error('Invite not found');
   }
 
-  // Verify user is a team owner
   const { data: membership } = await client
     .from('team_members')
     .select('role')
@@ -254,7 +237,6 @@ export async function revokeTeamInvite(inviteId: string) {
     throw new Error('Only team owners can revoke invites');
   }
 
-  // Revoke the invite
   const { error } = await client
     .from('team_invites')
     .update({ status: 'revoked' })
@@ -272,9 +254,6 @@ export async function getInviteDetails(token: string) {
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
-  // Get invite details without requiring authentication.
-  // Use the service role client when available so token-based invites are readable
-  // even for users who are not signed in.
   const { data: invite, error } = await client
     .from('team_invites')
     .select('id, email, status, expires_at, team_id')
@@ -285,7 +264,6 @@ export async function getInviteDetails(token: string) {
     throw new Error('Invalid invite');
   }
 
-  // Check if expired
   if (invite.status !== 'pending') {
     throw new Error(`Invite has already been ${invite.status}`);
   }
@@ -294,7 +272,6 @@ export async function getInviteDetails(token: string) {
     throw new Error('Invite has expired');
   }
 
-  // Get team details
   const { data: team } = await client
     .from('teams')
     .select('name')
@@ -306,4 +283,82 @@ export async function getInviteDetails(token: string) {
     teamName: team?.name || 'Your Team',
     teamId: invite.team_id,
   };
+}
+
+export async function removeTeamMember(teamId: string, memberUserId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
+
+  const adminClient = createAdminClient();
+  const client = adminClient ?? supabase;
+
+  const { data: membership } = await client
+    .from('team_members')
+    .select('role')
+    .eq('team_id', teamId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!membership || membership.role !== 'owner') {
+    throw new Error('Only team owners can remove members');
+  }
+
+  if (memberUserId === user.id) {
+    throw new Error('Owners cannot remove themselves. Transfer ownership to another member first.');
+  }
+
+  const { error } = await client
+    .from('team_members')
+    .delete()
+    .eq('team_id', teamId)
+    .eq('user_id', memberUserId);
+
+  if (error) {
+    throw new Error(`Failed to remove member: ${error.message}`);
+  }
+
+  return { success: true };
+}
+
+export async function updateTeamMemberRole(teamId: string, memberUserId: string, role: 'owner' | 'member') {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
+
+  const adminClient = createAdminClient();
+  const client = adminClient ?? supabase;
+
+  const { data: membership } = await client
+    .from('team_members')
+    .select('role')
+    .eq('team_id', teamId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!membership || membership.role !== 'owner') {
+    throw new Error('Only team owners can change member roles');
+  }
+
+  if (memberUserId === user.id && role !== 'owner') {
+    throw new Error('You cannot demote yourself. Promote another member to owner first.');
+  }
+
+  const { error } = await client
+    .from('team_members')
+    .update({ role })
+    .eq('team_id', teamId)
+    .eq('user_id', memberUserId);
+
+  if (error) {
+    throw new Error(`Failed to update role: ${error.message}`);
+  }
+
+  return { success: true };
 }

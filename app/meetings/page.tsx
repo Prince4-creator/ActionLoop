@@ -11,7 +11,7 @@ import { getTeamIdsForUser, ensureDefaultTeamForUser } from '@/lib/teams';
 export default async function MeetingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; sort?: string }>;
 }) {
   const supabase = await createClient();
   const adminClient = createAdminClient();
@@ -22,6 +22,7 @@ export default async function MeetingsPage({
 
   const resolvedSearchParams = await searchParams;
   const query = String(resolvedSearchParams?.q ?? '').trim();
+  const sort = String(resolvedSearchParams?.sort ?? 'newest');
   const safeQuery = query.replace(/'/g, "''").replace(/%/g, '\\%');
   const searchFilter = safeQuery
     ? `title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%,notes.ilike.%${safeQuery}%`
@@ -36,6 +37,13 @@ export default async function MeetingsPage({
   const baseSelect = 'id, title, summary, notes, created_at, outcome_score';
   const fallbackSelect = 'id, title, summary, created_at, outcome_score';
 
+  const applySort = (q: any) => {
+    if (sort === 'score_desc') return q.order('outcome_score', { ascending: false });
+    if (sort === 'score_asc') return q.order('outcome_score', { ascending: true });
+    if (sort === 'oldest') return q.order('created_at', { ascending: true });
+    return q.order('created_at', { ascending: false }); // newest (default)
+  };
+
   let meetings: Array<{ id: string; title: string | null; summary: string | null; notes?: string | null; created_at?: string; outcome_score?: number; }> | null = null;
 
   try {
@@ -46,7 +54,7 @@ export default async function MeetingsPage({
     if (searchFilter) {
       meetingsQuery = meetingsQuery.or(searchFilter);
     }
-    meetingsQuery = meetingsQuery.order('created_at', { ascending: false });
+    meetingsQuery = applySort(meetingsQuery);
     const response = await meetingsQuery;
     meetings = response.data;
   } catch {
@@ -57,27 +65,29 @@ export default async function MeetingsPage({
     if (searchFilter) {
       meetingsQuery = meetingsQuery.or(`title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%`);
     }
-    meetingsQuery = meetingsQuery.order('created_at', { ascending: false });
+    meetingsQuery = applySort(meetingsQuery);
     const response = await meetingsQuery;
     meetings = response.data;
   }
 
   if ((!meetings || meetings.length === 0) && !teamIds.length && user.id) {
     try {
-      const fallbackQuery = client
+      let fallbackQuery = client
         .from('meetings')
         .select(baseSelect)
         .eq('user_id', user.id);
-      if (searchFilter) fallbackQuery.or(searchFilter);
-      const fallback = await fallbackQuery.order('created_at', { ascending: false });
+      if (searchFilter) fallbackQuery = fallbackQuery.or(searchFilter);
+      fallbackQuery = applySort(fallbackQuery);
+      const fallback = await fallbackQuery;
       meetings = fallback.data ?? meetings;
     } catch {
-      const fallbackQuery = client
+      let fallbackQuery = client
         .from('meetings')
         .select(fallbackSelect)
         .eq('user_id', user.id);
-      if (searchFilter) fallbackQuery.or(`title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%`);
-      const fallback = await fallbackQuery.order('created_at', { ascending: false });
+      if (searchFilter) fallbackQuery = fallbackQuery.or(`title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%`);
+      fallbackQuery = applySort(fallbackQuery);
+      const fallback = await fallbackQuery;
       meetings = fallback.data ?? meetings;
     }
   }
@@ -96,9 +106,21 @@ export default async function MeetingsPage({
               className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </div>
-          <button type="submit" className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
-            Search
-          </button>
+          <div className="flex gap-2">
+            <select
+              name="sort"
+              defaultValue={sort}
+              className="rounded-2xl border border-slate-300 bg-white px-3 py-3 text-sm shadow-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="score_desc">Highest score</option>
+              <option value="score_asc">Lowest score</option>
+            </select>
+            <button type="submit" className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
+              Search
+            </button>
+          </div>
         </form>
 
         {query ? (
