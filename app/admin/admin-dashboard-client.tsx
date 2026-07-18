@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ShieldCheck,
   Users,
@@ -19,8 +20,12 @@ import {
   ArrowUpRight,
   Crown,
   KeyRound,
+  Activity,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import SetupTotpClient from './setup-totp/setup-totp-client';
+import { describeAuditAction, type AuditLogEntry } from '@/lib/audit';
 
 type Profile = {
   id: string;
@@ -51,23 +56,71 @@ function initialsFor(email: string | null) {
   );
 }
 
+function timeAgo(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+// Dependency-free horizontal bar distribution — no chart library needed.
+function DistributionBars({ stats }: { stats: Stats }) {
+  const rows = [
+    { label: 'Meetings', value: stats.meetings, color: 'oklch(0.72 0.16 300)' },
+    { label: 'Action items', value: stats.actionItems, color: 'oklch(0.75 0.14 260)' },
+    { label: 'Pending actions', value: stats.pendingActionItems, color: 'oklch(0.78 0.14 85)' },
+    { label: 'Teams', value: stats.teams, color: 'oklch(0.7 0.13 200)' },
+  ];
+  const max = Math.max(1, ...rows.map((r) => r.value));
+
+  return (
+    <div className="space-y-3">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+            <span>{row.label}</span>
+            <span className="font-semibold text-foreground">{row.value}</span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.max(4, (row.value / max) * 100)}%` }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+              className="h-full rounded-full"
+              style={{ backgroundColor: row.color }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminDashboardClient({
   adminEmail,
   profiles,
   errorMessage,
   schemaError,
   stats,
+  auditLog,
 }: {
   adminEmail: string;
   profiles: Profile[];
   errorMessage: string | null;
   schemaError: boolean;
   stats: Stats;
+  auditLog: AuditLogEntry[];
 }) {
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'email' | 'role' | 'updated_at'>('email');
   const [pendingRoleId, setPendingRoleId] = useState<string | null>(null);
   const [localProfiles, setLocalProfiles] = useState(profiles);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPending, setBulkPending] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -85,6 +138,26 @@ export default function AdminDashboardClient({
       return (b.updated_at ?? '').localeCompare(a.updated_at ?? '');
     });
   }, [localProfiles, query, sortBy]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds((current) => {
+      if (allFilteredSelected) return new Set();
+      const next = new Set(current);
+      filtered.forEach((p) => next.add(p.id));
+      return next;
+    });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleToggleRole = async (profile: Profile) => {
     const nextRole = profile.role === 'admin' ? '' : 'admin';
@@ -112,9 +185,37 @@ export default function AdminDashboardClient({
     }
   };
 
+  const handleBulkRoleChange = async (role: 'admin' | '') => {
+    if (!selectedIds.size) return;
+    const ids = Array.from(selectedIds);
+    setBulkPending(true);
+
+    const previous = localProfiles;
+    setLocalProfiles((current) =>
+      current.map((p) => (ids.includes(p.id) ? { ...p, role: role || 'member' } : p))
+    );
+
+    try {
+      const res = await fetch('/api/admin/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, role }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || 'Bulk update failed');
+      toast.success(`${ids.length} user${ids.length === 1 ? '' : 's'} updated`);
+      setSelectedIds(new Set());
+    } catch (err) {
+      setLocalProfiles(previous);
+      toast.error(err instanceof Error ? err.message : 'Unable to update selected users');
+    } finally {
+      setBulkPending(false);
+    }
+  };
+
   const statCards = [
-    { label: 'Total users', value: stats.totalUsers, icon: Users, accent: 'from-indigo-500 to-violet-600' },
-    { label: 'Admins', value: stats.adminCount, icon: Crown, accent: 'from-amber-500 to-orange-600' },
+    { label: 'Total users', value: stats.totalUsers, icon: Users, accent: 'from-violet-500 to-fuchsia-600' },
+    { label: 'Admins', value: stats.adminCount, icon: Crown, accent: 'from-amber-400 to-yellow-500' },
     {
       label: 'Meeting requests',
       value: stats.meetingRequests ?? '—',
@@ -133,20 +234,20 @@ export default function AdminDashboardClient({
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      {/* Hero — deliberately darker/premium, distinct from the member dashboard's blue/emerald look */}
+      {/* Hero — violet/gold, deliberately distinct from the member dashboard */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-white shadow-2xl sm:p-8"
+        className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-white shadow-2xl sm:p-8"
       >
-        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-indigo-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-72 w-72 rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-violet-500/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl" />
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <Badge className="rounded-full border border-white/20 bg-white/10 text-white backdrop-blur">
+            <Badge className="admin-accent-rule rounded-full border border-white/20 bg-white/10 text-white backdrop-blur">
               <ShieldCheck className="mr-1 h-3 w-3" /> Admin control center
             </Badge>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
               Workspace command center
             </h1>
             <p className="mt-2 max-w-xl text-sm text-indigo-100/80">
@@ -180,80 +281,145 @@ export default function AdminDashboardClient({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
-              className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/90"
             >
-              <div className={`mb-3 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${stat.accent} text-white shadow-sm`}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{stat.value}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</p>
+              <Card size="sm">
+                <CardContent className="p-1">
+                  <div className={`mb-3 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${stat.accent} text-white shadow-sm`}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <p className="text-xl font-semibold text-foreground">{stat.value}</p>
+                  <p className="text-xs text-muted-foreground">{stat.label}</p>
+                </CardContent>
+              </Card>
             </motion.div>
           );
         })}
       </div>
 
+      {/* Distribution + activity feed, side by side — admin-only content */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="admin-accent-rule inline-block text-lg">Workspace distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DistributionBars stats={stats} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="admin-accent-rule inline-flex items-center gap-2 text-lg">
+              <Activity className="h-4 w-4" /> Recent activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {auditLog.length ? (
+              <ul className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                {auditLog.map((entry) => (
+                  <li key={entry.id} className="flex items-start justify-between gap-3 border-b border-white/10 pb-3 last:border-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-sm text-foreground">{describeAuditAction(entry)}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{entry.actor_email ?? 'Unknown admin'}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(entry.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No admin actions logged yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Two-factor setup */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
+      <Card>
+        <CardContent className="flex items-start gap-3 p-5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300">
             <KeyRound className="h-4 w-4" />
           </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <div className="flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Two-factor authentication
             </p>
-            <p className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
+            <p className="mt-1 text-base font-semibold text-foreground">
               Enable Google Authenticator for admin sign-in
             </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            <p className="mt-1 text-sm text-muted-foreground">
               Set up a one-time code so password-only access is no longer enough.
             </p>
-          </div>
-        </div>
-        <div className="mt-4">
-          <SetupTotpClient />
-        </div>
-      </section>
-
-      {/* Users table */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Workspace users</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {filtered.length} of {localProfiles.length} shown
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by email or role"
-                className="w-56 rounded-xl pl-9"
-              />
+            <div className="mt-4">
+              <SetupTotpClient />
             </div>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-            >
-              <option value="email">Sort: Email</option>
-              <option value="role">Sort: Role</option>
-              <option value="updated_at">Sort: Recently updated</option>
-            </select>
           </div>
-        </div>
+        </CardContent>
+      </Card>
+
+      {/* Users table with bulk selection */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-lg">Workspace users</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {filtered.length} of {localProfiles.length} shown
+                {selectedIds.size ? ` · ${selectedIds.size} selected` : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by email or role"
+                  className="w-56 pl-9"
+                />
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="rounded-full border border-white/20 bg-white/5 px-3 py-2 text-sm text-foreground"
+              >
+                <option value="email">Sort: Email</option>
+                <option value="role">Sort: Role</option>
+                <option value="updated_at">Sort: Recently updated</option>
+              </select>
+            </div>
+          </div>
+        </CardHeader>
+
+        {selectedIds.size > 0 ? (
+          <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-2xl border border-violet-400/25 bg-violet-500/10 px-4 py-3">
+            <span className="text-sm text-foreground">{selectedIds.size} selected</span>
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" disabled={bulkPending} onClick={() => handleBulkRoleChange('admin')}>
+                {bulkPending ? 'Applying…' : 'Make admin'}
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkPending} onClick={() => handleBulkRoleChange('')}>
+                Make member
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {error_content(errorMessage, schemaError)}
 
         {!errorMessage && filtered.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-separate border-spacing-0">
-              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
+              <thead className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-5 py-3">User</th>
+                  <th className="w-10 px-5 py-3">
+                    <button type="button" onClick={toggleSelectAll} aria-label="Select all">
+                      {allFilteredSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                    </button>
+                  </th>
+                  <th className="px-2 py-3">User</th>
                   <th className="px-5 py-3">Role</th>
                   <th className="px-5 py-3">Updated</th>
                   <th className="px-5 py-3 text-right">Actions</th>
@@ -261,26 +427,22 @@ export default function AdminDashboardClient({
               </thead>
               <tbody>
                 {filtered.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="border-t border-slate-100 last:border-b hover:bg-slate-50/70 dark:border-slate-900 dark:hover:bg-slate-900/60"
-                  >
+                  <tr key={p.id} className="border-t border-white/10 last:border-b hover:bg-white/5">
                     <td className="px-5 py-3">
+                      <button type="button" onClick={() => toggleSelect(p.id)} aria-label={`Select ${p.email}`}>
+                        {selectedIds.has(p.id) ? <CheckSquare className="h-4 w-4 text-violet-400" /> : <Square className="h-4 w-4 text-muted-foreground" />}
+                      </button>
+                    </td>
+                    <td className="px-2 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-semibold text-white">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-600 text-xs font-semibold text-white">
                           {initialsFor(p.email)}
                         </div>
-                        <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{p.email}</span>
+                        <span className="text-sm font-medium text-foreground">{p.email}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      <Badge
-                        className={
-                          p.role === 'admin'
-                            ? 'rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
-                            : 'rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                        }
-                      >
+                      <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
                         {p.role === 'admin' ? (
                           <>
                             <Crown className="mr-1 h-3 w-3" /> Admin
@@ -290,14 +452,13 @@ export default function AdminDashboardClient({
                         )}
                       </Badge>
                     </td>
-                    <td className="px-5 py-3 text-sm text-slate-500 dark:text-slate-400">
+                    <td className="px-5 py-3 text-sm text-muted-foreground">
                       {p.updated_at ? new Date(p.updated_at).toLocaleString() : '—'}
                     </td>
                     <td className="px-5 py-3 text-right">
                       <Button
                         size="sm"
                         variant={p.role === 'admin' ? 'destructive' : 'default'}
-                        className="rounded-xl"
                         disabled={pendingRoleId === p.id}
                         onClick={() => handleToggleRole(p)}
                       >
@@ -310,11 +471,9 @@ export default function AdminDashboardClient({
             </table>
           </div>
         ) : !errorMessage ? (
-          <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-            No users match your search.
-          </div>
+          <div className="p-8 text-center text-sm text-muted-foreground">No users match your search.</div>
         ) : null}
-      </section>
+      </Card>
     </div>
   );
 }
@@ -322,19 +481,17 @@ export default function AdminDashboardClient({
 function error_content(errorMessage: string | null, schemaError: boolean) {
   if (!errorMessage) return null;
   return (
-    <div className="m-5 rounded-2xl border border-amber-300/70 bg-amber-50/80 p-5 text-sm text-slate-800 dark:border-amber-400/60 dark:bg-slate-900/70 dark:text-slate-200">
+    <div className="m-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-5 text-sm text-foreground">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-200 text-base font-semibold text-amber-950 dark:bg-amber-400/20 dark:text-amber-200">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300">
           <AlertTriangle className="h-4 w-4" />
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-300">
-            Admin data unavailable
-          </p>
-          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+          <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">Admin data unavailable</p>
+          <p className="mt-1 text-sm text-foreground">
             Your Supabase project does not currently have a `profiles` table available for the admin dashboard.
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {schemaError
               ? 'Please verify that the `profiles` table exists in your Supabase database and that your schema is up to date.'
               : errorMessage}

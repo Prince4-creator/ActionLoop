@@ -4,6 +4,7 @@ import { isAdminUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/admin';
 import { AppShell } from '@/components/app-shell';
 import AdminDashboardClient from './admin-dashboard-client';
+import type { AuditLogEntry } from '@/lib/audit';
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -41,6 +42,12 @@ export default async function AdminPage() {
     .select('id', { count: 'exact', head: true })
     .in('status', ['pending', 'overdue']);
 
+  const { data: auditLogData } = await client
+    .from('admin_audit_log')
+    .select('id, actor_email, action, target_type, target_id, details, created_at')
+    .order('created_at', { ascending: false })
+    .limit(20);
+
   const errorMessage = error ? String(error.message || 'Unable to load admin user data.') : null;
   const schemaError = errorMessage?.includes('profiles') || errorMessage?.includes('schema cache');
 
@@ -53,6 +60,7 @@ export default async function AdminPage() {
         profiles={profiles ?? []}
         errorMessage={errorMessage}
         schemaError={Boolean(schemaError)}
+        auditLog={(auditLogData ?? []) as AuditLogEntry[]}
         stats={{
           totalUsers: profiles?.length ?? 0,
           adminCount,

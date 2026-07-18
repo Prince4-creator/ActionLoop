@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 import { isAdminUser } from '@/lib/auth';
+import { logAdminAction } from '@/lib/audit';
 
 export async function POST(req: Request) {
   try {
@@ -50,6 +51,15 @@ export async function POST(req: Request) {
     if (deleteErr) {
       return NextResponse.json({ error: deleteErr.message ?? 'Meeting created but request deletion failed' }, { status: 500 });
     }
+
+    await logAdminAction(adminClient, {
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'meeting_request_converted',
+      targetType: 'meeting_requests',
+      targetId: id,
+      details: { meetingId: meeting.id, requesterEmail: requestRow.requester_email ?? null },
+    });
 
     return NextResponse.json({ success: true, meetingId: meeting.id });
   } catch (err) {
