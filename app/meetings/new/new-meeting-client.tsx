@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-// Use the API route as a fallback to avoid server-action mapping issues in dev
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,7 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { Icons } from '@/components/ui/icons';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Video, VideoOff } from 'lucide-react';
+import { VideoMeeting } from '@/components/video-meeting';
+import { LiveTranscriptPanel } from '@/components/live-transcript-panel';
+import { generateAdhocRoomName } from '@/lib/video-room';
 
 export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
   const router = useRouter();
@@ -20,6 +22,21 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
   const [notes, setNotes] = useState('');
   const [transcript, setTranscript] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const [liveMode, setLiveMode] = useState(false);
+  const [roomName] = useState(() => generateAdhocRoomName());
+  const [liveTranscriptDraft, setLiveTranscriptDraft] = useState('');
+
+  const handleStartLiveCall = () => {
+    setLiveMode(true);
+    setLiveTranscriptDraft('');
+  };
+
+  const handleEndLiveCall = () => {
+    setLiveMode(false);
+    setTranscript((current) => (current ? `${current}\n${liveTranscriptDraft}` : liveTranscriptDraft));
+    toast.success('Transcript filled in from the call — review it below before extracting.');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +75,7 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
             <CardTitle className="text-2xl">{isAdmin ? 'New Meeting' : 'Meeting Request'}</CardTitle>
             <CardDescription>
               {isAdmin
-                ? 'Paste a meeting transcript and let AI extract the action items.'
+                ? 'Start a live call or paste a transcript, and let AI extract the action items.'
                 : 'Meeting scheduling is currently handled by workspace admins. You can request a meeting or return to your dashboard.'}
             </CardDescription>
           </CardHeader>
@@ -92,10 +109,36 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
                     className="rounded-xl min-h-[120px]"
                   />
                 </div>
+
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Live video call</p>
+                      <p className="text-xs text-slate-500">Talk it through and let captions fill the transcript below.</p>
+                    </div>
+                    {!liveMode ? (
+                      <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={handleStartLiveCall}>
+                        <Video className="mr-2 h-4 w-4" /> Start live call
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="destructive" size="sm" className="rounded-xl" onClick={handleEndLiveCall}>
+                        <VideoOff className="mr-2 h-4 w-4" /> End call & fill transcript
+                      </Button>
+                    )}
+                  </div>
+
+                  {liveMode ? (
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      <VideoMeeting roomName={roomName} height={320} />
+                      <LiveTranscriptPanel autoStart onTranscriptChange={setLiveTranscriptDraft} />
+                    </div>
+                  ) : null}
+                </div>
+
                 <div>
                   <label className="text-sm font-medium block mb-1">Transcript *</label>
                   <Textarea
-                    placeholder="Paste your meeting transcript here..."
+                    placeholder="Paste your meeting transcript here, or start a live call above..."
                     value={transcript}
                     onChange={(e) => setTranscript(e.target.value)}
                     className="rounded-xl min-h-[200px]"

@@ -7,12 +7,17 @@ import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Link2 } from 'lucide-react';
+import { getAppUrl } from '@/lib/app-url';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { sendReminderForItem, deleteMeeting } from '@/utils/api';
 import { markActionItemDone } from '@/app/actions/meetings';
-import { ArrowLeft, CheckCircle2, Copy, Download, Filter, ListTodo } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Copy, Download, Filter, ListTodo, Video } from 'lucide-react';
 import MeetingShareForm from './meeting-share-form';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { VideoMeeting } from '@/components/video-meeting';
+import { getMeetingRoomName } from '@/lib/video-room';
 
 type MeetingRecord = {
   id: string;
@@ -65,10 +70,12 @@ export default function MeetingDetailClient({
   const [attendeeCount, setAttendeeCount] = useState(meeting.attendee_count ?? 1);
   const [avgHourlyRate, setAvgHourlyRate] = useState(meeting.avg_hourly_rate ?? 75);
   const estimatedCost = Math.round(attendeeCount * avgHourlyRate * 0.5 * 100) / 100;
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'done' | 'overdue'>('all');
   const [sharedMembers, setSharedMembers] = useState(initialSharedMembers);
+  const [videoOpen, setVideoOpen] = useState(false);
 
   const visibleItems = useMemo(() => {
     if (filter === 'all') return actionItems;
@@ -130,6 +137,17 @@ export default function MeetingDetailClient({
     const text = meeting.summary || `Meeting: ${meeting.title || 'Untitled meeting'}`;
     await navigator.clipboard.writeText(text);
     toast.success('Summary copied');
+  };
+  const handleCopyMeetingLink = async () => {
+    const link = `${getAppUrl()}/meetings/${meeting.id}`;
+    await navigator.clipboard.writeText(link);
+    toast.success('Meeting link copied — teammates with access can open it and start the call');
+  };
+
+  const handleCopyGuestLink = async () => {
+    const link = `${getAppUrl()}/meet/${meeting.id}`;
+    await navigator.clipboard.writeText(link);
+    toast.success('Guest link copied — anyone with this link can join, no account needed');
   };
 
   const handleExportCsv = () => {
@@ -211,6 +229,15 @@ export default function MeetingDetailClient({
           </Button>
         </Link>
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="rounded-2xl" onClick={() => setVideoOpen(true)}>
+            <Video className="mr-2 h-4 w-4" /> Start Live Meeting
+          </Button>
+          <Button variant="outline" size="sm" className="rounded-2xl" onClick={handleCopyMeetingLink}>
+            <Link2 className="mr-2 h-4 w-4" /> Copy meeting link
+          </Button>
+          <Button variant="outline" size="sm" className="rounded-2xl" onClick={handleCopyGuestLink}>
+            <Link2 className="mr-2 h-4 w-4" /> Copy guest link
+          </Button>
           <Button variant="outline" size="sm" className="rounded-2xl" onClick={handleCopySummary}>
             <Copy className="mr-2 h-4 w-4" /> Copy summary
           </Button>
@@ -476,6 +503,23 @@ export default function MeetingDetailClient({
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog open={videoOpen} onOpenChange={setVideoOpen}>
+        <DialogContent className="w-full max-w-3xl p-0 sm:max-w-3xl">
+          <DialogHeader className="p-4 pb-0">
+            <DialogTitle>{meeting.title || 'Meeting'} — Video call</DialogTitle>
+          </DialogHeader>
+          <div className="p-4 pt-2">
+            {videoOpen ? (
+              <VideoMeeting
+                roomName={getMeetingRoomName(meeting.id)}
+                height={520}
+                onClose={() => setVideoOpen(false)}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
