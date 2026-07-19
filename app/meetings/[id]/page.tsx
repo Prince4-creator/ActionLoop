@@ -4,7 +4,9 @@ import { isAdminUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/admin';
 import MeetingDetailClient from './meeting-detail-client';
 import { AppShell } from '@/components/app-shell';
-import { getTeamIdsForUser } from '@/lib/teams';type MeetingRecord = {
+import { getTeamIdsForUser } from '@/lib/teams';
+
+type MeetingRecord = {
   id: string;
   user_id: string;
   title?: string | null;
@@ -13,6 +15,8 @@ import { getTeamIdsForUser } from '@/lib/teams';type MeetingRecord = {
   desired_outcome?: string | null;
   decision?: string | null;
   outcome_score?: number;
+  attendee_count?: number | null;
+  avg_hourly_rate?: number | null;
 };
 
 type ActionItemRecord = {
@@ -65,7 +69,7 @@ export default async function MeetingDetailPage({
     // from the error message and retry without those columns so the page still loads.
     const fallback = await client
       .from('meetings')
-      .select('id, user_id, title, summary, notes, desired_outcome, decision, outcome_score')
+      .select('id, user_id, title, summary, notes, desired_outcome, decision, outcome_score, attendee_count, avg_hourly_rate')
       .eq('id', meetingId)
       .maybeSingle<MeetingRecord>();
 
@@ -82,7 +86,7 @@ export default async function MeetingDetailPage({
           if (m[1]) missingCols.push(m[1]);
         }
 
-        const allCols = ['id', 'user_id', 'title', 'summary', 'notes', 'desired_outcome', 'decision', 'outcome_score'];
+        const allCols = ['id', 'user_id', 'title', 'summary', 'notes', 'desired_outcome', 'decision', 'outcome_score', 'attendee_count', 'avg_hourly_rate'];
         const colsToSelect = allCols.filter(c => !missingCols.includes(c)).join(', ');
 
         // If all requested columns are missing, fall back to a minimal select.

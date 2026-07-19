@@ -23,6 +23,8 @@ type MeetingRecord = {
   desired_outcome?: string | null;
   decision?: string | null;
   outcome_score?: number;
+  attendee_count?: number | null;
+  avg_hourly_rate?: number | null;
 };
 
 type ActionItemRecord = {
@@ -60,6 +62,9 @@ export default function MeetingDetailClient({
   const [desiredOutcome, setDesiredOutcome] = useState(meeting.desired_outcome ?? '');
   const [decision, setDecision] = useState(meeting.decision ?? '');
   const [outcomeScore, setOutcomeScore] = useState(meeting.outcome_score ?? 0);
+  const [attendeeCount, setAttendeeCount] = useState(meeting.attendee_count ?? 1);
+  const [avgHourlyRate, setAvgHourlyRate] = useState(meeting.avg_hourly_rate ?? 75);
+  const estimatedCost = Math.round(attendeeCount * avgHourlyRate * 0.5 * 100) / 100;
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'done' | 'overdue'>('all');
@@ -141,6 +146,51 @@ export default function MeetingDetailClient({
     toast.success('CSV exported');
   };
 
+  const resetEditState = () => {
+    setIsEditing(false);
+    setTitle(meeting.title ?? '');
+    setSummary(meeting.summary ?? '');
+    setNotes(meeting.notes ?? '');
+    setDesiredOutcome(meeting.desired_outcome ?? '');
+    setDecision(meeting.decision ?? '');
+    setOutcomeScore(meeting.outcome_score ?? 0);
+    setAttendeeCount(meeting.attendee_count ?? 1);
+    setAvgHourlyRate(meeting.avg_hourly_rate ?? 75);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch('/api/meetings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meetingId: meeting.id,
+          title,
+          summary,
+          notes,
+          desired_outcome: desiredOutcome,
+          decision,
+          outcome_score: outcomeScore,
+          attendee_count: attendeeCount,
+          avg_hourly_rate: avgHourlyRate,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Save failed');
+      if (json.warning) {
+        toast.warning(json.warning);
+      } else {
+        toast.success('Meeting updated');
+      }
+      setIsEditing(false);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Unable to save');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const statusClass = (status: string) => {
     switch (status) {
       case 'done':
@@ -170,43 +220,10 @@ export default function MeetingDetailClient({
           {canManageSharing ? (
             isEditing ? (
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" className="rounded-2xl" onClick={async () => {
-                  setIsSaving(true);
-                  try {
-                    const res = await fetch('/api/meetings/update', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        meetingId: meeting.id,
-                        title,
-                        summary,
-                        notes,
-                        desired_outcome: desiredOutcome,
-                        decision,
-                        outcome_score: outcomeScore,
-                      }),
-                    });
-                    const json = await res.json();
-                    if (!res.ok || json.error) throw new Error(json.error || 'Save failed');
-                    toast.success('Meeting updated');
-                    setIsEditing(false);
-                  } catch (err: unknown) {
-                    toast.error(err instanceof Error ? err.message : 'Unable to save');
-                  } finally {
-                    setIsSaving(false);
-                  }
-                }} disabled={isSaving}>
+                <Button size="sm" className="rounded-2xl" onClick={handleSave} disabled={isSaving}>
                   {isSaving ? 'Saving...' : 'Save'}
                 </Button>
-                <Button size="sm" variant="ghost" className="rounded-2xl" onClick={() => {
-                  setIsEditing(false);
-                  setTitle(meeting.title ?? '');
-                  setSummary(meeting.summary ?? '');
-                  setNotes(meeting.notes ?? '');
-                  setDesiredOutcome(meeting.desired_outcome ?? '');
-                  setDecision(meeting.decision ?? '');
-                  setOutcomeScore(meeting.outcome_score ?? 0);
-                }}>
+                <Button size="sm" variant="ghost" className="rounded-2xl" onClick={resetEditState}>
                   Cancel
                 </Button>
               </div>
@@ -278,12 +295,38 @@ export default function MeetingDetailClient({
                       Score preview: {outcomeScore}%
                     </div>
                   </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-300">Attendee count</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={attendeeCount}
+                        onChange={(e) => setAttendeeCount(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                        className="mt-1 w-full rounded-md border bg-white/90 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-300">Avg hourly rate ($)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={avgHourlyRate}
+                        onChange={(e) => setAvgHourlyRate(Math.max(0, Number(e.target.value) || 0))}
+                        className="mt-1 w-full rounded-md border bg-white/90 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+                      />
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
+                    Est. meeting cost preview: ${estimatedCost} ({attendeeCount} attendee{attendeeCount === 1 ? '' : 's'} · ~30 min)
+                  </div>
                 </div>
               ) : (
                 <>
                   <CardTitle className="text-2xl">{title || 'Untitled Meeting'}</CardTitle>
                   <p className="mt-2 text-sm text-muted-foreground">{summary || 'No summary available yet.'}</p>
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/70">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Desired outcome</p>
                       <p className="mt-2 text-sm text-slate-800 dark:text-slate-200">{desiredOutcome || 'No desired outcome set.'}</p>
@@ -300,6 +343,11 @@ export default function MeetingDetailClient({
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Outcome score</p>
                       <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{outcomeScore}%</p>
                     </div>
+                    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Est. meeting cost</p>
+                      <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">${estimatedCost}</p>
+                      <p className="mt-1 text-xs text-slate-500">{attendeeCount} attendee{attendeeCount === 1 ? '' : 's'} · ~30 min</p>
+                    </div>
                   </div>
                 </>
               )}
@@ -308,43 +356,10 @@ export default function MeetingDetailClient({
               <div className="flex items-center gap-2">
                 {isEditing ? (
                   <>
-                    <Button size="sm" className="rounded-2xl" onClick={async () => {
-                      setIsSaving(true);
-                      try {
-                        const res = await fetch('/api/meetings/update', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            meetingId: meeting.id,
-                            title,
-                            summary,
-                            notes,
-                            desired_outcome: desiredOutcome,
-                            decision,
-                            outcome_score: outcomeScore,
-                          }),
-                        });
-                        const json = await res.json();
-                        if (!res.ok || json.error) throw new Error(json.error || 'Save failed');
-                        toast.success('Meeting updated');
-                        setIsEditing(false);
-                      } catch (err: unknown) {
-                        toast.error(err instanceof Error ? err.message : 'Unable to save');
-                      } finally {
-                        setIsSaving(false);
-                      }
-                    }} disabled={isSaving}>
+                    <Button size="sm" className="rounded-2xl" onClick={handleSave} disabled={isSaving}>
                       {isSaving ? 'Saving...' : 'Save'}
                     </Button>
-                    <Button size="sm" variant="ghost" className="rounded-2xl" onClick={() => {
-                      setIsEditing(false);
-                      setTitle(meeting.title ?? '');
-                      setSummary(meeting.summary ?? '');
-                      setNotes(meeting.notes ?? '');
-                      setDesiredOutcome(meeting.desired_outcome ?? '');
-                      setDecision(meeting.decision ?? '');
-                      setOutcomeScore(meeting.outcome_score ?? 0);
-                    }}>
+                    <Button size="sm" variant="ghost" className="rounded-2xl" onClick={resetEditState}>
                       Cancel
                     </Button>
                   </>

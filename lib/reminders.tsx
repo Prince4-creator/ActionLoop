@@ -5,6 +5,7 @@ import { render } from '@react-email/render';
 import { ReminderEmail } from '@/emails/reminder-email';
 import { WebClient } from '@slack/web-api';
 import { getAppUrl } from '@/lib/app-url';
+import { buildActionItemIcs } from '@/lib/ics';
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -21,6 +22,7 @@ async function sendReminderEmail(
   description: string,
   dueDate: string | null,
   meetingId: string,
+  actionItemId: string,
   isEscalation = false
 ) {
   if (!resend) return;
@@ -39,6 +41,23 @@ async function sendReminderEmail(
     />
   );
 
+  const attachments = dueDate
+    ? [
+        {
+          filename: 'action-item.ics',
+          content: Buffer.from(
+            buildActionItemIcs({
+              uid: actionItemId,
+              title: `${meetingTitle}: ${description}`,
+              description,
+              dueDate,
+              url: `${getAppUrl()}/meetings/${meetingId}`,
+            })
+          ).toString('base64'),
+        },
+      ]
+    : [];
+
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL || 'ActionLoop <onboarding@resend.dev>',
     to: [toAddress],
@@ -46,6 +65,7 @@ async function sendReminderEmail(
       ? `Escalation: task still overdue in ${meetingTitle}`
       : `Reminder: ${meetingTitle} action item due soon`,
     html: emailHtml,
+    attachments,
   });
 }
 
@@ -152,6 +172,7 @@ export async function sendTeamReminder({
       item.description,
       item.due_date,
       meeting.id,
+      item.id,
       isEscalation
     );
   }
@@ -187,6 +208,7 @@ export async function sendCreatorEscalationEmail({
     item.description,
     item.due_date,
     meeting.id,
+    item.id,
     true
   );
 }

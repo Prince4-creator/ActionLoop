@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       : null;
     const decision = typeof body.decision === 'string' ? body.decision.trim() : null;
     const notes = typeof body.notes === 'string' ? body.notes.trim() : null;
+
     let outcomeScore: number | null = null;
     if (Object.prototype.hasOwnProperty.call(body, 'outcome_score') || Object.prototype.hasOwnProperty.call(body, 'outcomeScore')) {
       const rawScore = String(body.outcome_score ?? body.outcomeScore ?? '').trim();
@@ -39,6 +40,34 @@ export async function POST(req: Request) {
         outcomeScore = Math.max(0, Math.min(100, Math.round(parsedScore)));
       } else {
         outcomeScore = 0;
+      }
+    }
+
+    let attendeeCount: number | null = null;
+    if (Object.prototype.hasOwnProperty.call(body, 'attendee_count') || Object.prototype.hasOwnProperty.call(body, 'attendeeCount')) {
+      const rawCount = String(body.attendee_count ?? body.attendeeCount ?? '').trim();
+      if (rawCount !== '') {
+        const parsedCount = Number(rawCount);
+        if (Number.isNaN(parsedCount)) {
+          return NextResponse.json({ error: 'Invalid attendee count' }, { status: 400 });
+        }
+        attendeeCount = Math.max(1, Math.round(parsedCount));
+      } else {
+        attendeeCount = 1;
+      }
+    }
+
+    let avgHourlyRate: number | null = null;
+    if (Object.prototype.hasOwnProperty.call(body, 'avg_hourly_rate') || Object.prototype.hasOwnProperty.call(body, 'avgHourlyRate')) {
+      const rawRate = String(body.avg_hourly_rate ?? body.avgHourlyRate ?? '').trim();
+      if (rawRate !== '') {
+        const parsedRate = Number(rawRate);
+        if (Number.isNaN(parsedRate)) {
+          return NextResponse.json({ error: 'Invalid hourly rate' }, { status: 400 });
+        }
+        avgHourlyRate = Math.max(0, parsedRate);
+      } else {
+        avgHourlyRate = 0;
       }
     }
 
@@ -80,6 +109,8 @@ export async function POST(req: Request) {
     if (desiredOutcome !== null) updates.desired_outcome = desiredOutcome;
     if (decision !== null) updates.decision = decision;
     if (outcomeScore !== null) updates.outcome_score = outcomeScore;
+    if (attendeeCount !== null) updates.attendee_count = attendeeCount;
+    if (avgHourlyRate !== null) updates.avg_hourly_rate = avgHourlyRate;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ success: true });
@@ -124,7 +155,8 @@ export async function POST(req: Request) {
           // outcome_score looked like they "weren't saving". Log it loudly now.
           console.error(
             `[api/meetings/update] Database is missing column(s): ${droppedColumns.join(', ')}. ` +
-              `Apply migration supabase/migrations/20260702160000_meeting_outcomes.sql (or run: ` +
+              `Apply migration supabase/migrations/20260702160000_meeting_outcomes.sql (or ` +
+              `supabase/migrations/20260719000000_meeting_cost.sql, or run: ` +
               `select column_name from information_schema.columns where table_name = 'meetings') to fix this.`
           );
         }

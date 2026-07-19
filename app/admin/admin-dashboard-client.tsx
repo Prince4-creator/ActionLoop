@@ -9,6 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   ShieldCheck,
   Users,
   Inbox,
@@ -24,6 +30,7 @@ import {
   CheckSquare,
   Square,
   Download,
+  ChevronDown,
 } from 'lucide-react';
 import SetupTotpClient from './setup-totp/setup-totp-client';
 import { describeAuditAction, type AuditLogEntry } from '@/lib/audit';
@@ -43,6 +50,14 @@ type Stats = {
   meetings: number;
   actionItems: number;
   pendingActionItems: number;
+};
+
+type SortKey = 'email' | 'role' | 'updated_at';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  email: 'Sort: Email',
+  role: 'Sort: Role',
+  updated_at: 'Sort: Recently updated',
 };
 
 function initialsFor(email: string | null) {
@@ -117,7 +132,7 @@ export default function AdminDashboardClient({
   auditLog: AuditLogEntry[];
 }) {
   const [query, setQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'email' | 'role' | 'updated_at'>('email');
+  const [sortBy, setSortBy] = useState<SortKey>('email');
   const [pendingRoleId, setPendingRoleId] = useState<string | null>(null);
   const [localProfiles, setLocalProfiles] = useState(profiles);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -384,25 +399,34 @@ export default function AdminDashboardClient({
                 {selectedIds.size ? ` · ${selectedIds.size} selected` : ''}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative w-full sm:w-56">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-muted-foreground" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search by email or role"
-                  className="w-56 pl-9"
+                  className="w-full border-slate-300 bg-white pl-9 text-slate-900 placeholder:text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-400"
                 />
               </div>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="rounded-full border border-white/20 bg-white/5 px-3 py-2 text-sm text-foreground"
-              >
-                <option value="email">Sort: Email</option>
-                <option value="role">Sort: Role</option>
-                <option value="updated_at">Sort: Recently updated</option>
-              </select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between rounded-full border-slate-300 bg-white text-slate-900 hover:bg-slate-50 dark:border-white/20 dark:bg-white/5 dark:text-white sm:w-auto"
+                  >
+                    {SORT_LABELS[sortBy]}
+                    <ChevronDown className="ml-2 h-4 w-4 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-48">
+                  {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                    <DropdownMenuItem key={key} onSelect={() => setSortBy(key)}>
+                      {SORT_LABELS[key]}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </CardHeader>
@@ -414,16 +438,27 @@ export default function AdminDashboardClient({
               <Button size="sm" disabled={bulkPending} onClick={() => handleBulkRoleChange('admin')}>
                 {bulkPending ? 'Applying…' : 'Make admin'}
               </Button>
-              <Button size="sm" variant="outline" disabled={bulkPending} onClick={() => handleBulkRoleChange('')}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={bulkPending}
+                onClick={() => handleBulkRoleChange('')}
+                className="border-slate-300 bg-white text-slate-900 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
                 Make member
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+              >
                 Clear
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-full"
+                className="rounded-full border-slate-300 bg-white text-slate-900 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
                 onClick={handleExportUsers}
                 disabled={!filtered.length}
               >
