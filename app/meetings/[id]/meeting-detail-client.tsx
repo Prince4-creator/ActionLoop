@@ -7,6 +7,8 @@ import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { MeetingAttachments } from '@/components/meeting-attachments';
+import { ActionItemComments } from '@/components/action-item-comments';
 import { Link2 } from 'lucide-react';
 import { getAppUrl } from '@/lib/app-url';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,6 +53,7 @@ type MeetingDetailClientProps = {
   initialSharedMembers: SharedMemberRecord[];
   canManageSharing: boolean;
   isAdmin: boolean;
+  currentUserId: string;
 };
 
 export default function MeetingDetailClient({
@@ -59,6 +62,7 @@ export default function MeetingDetailClient({
   initialSharedMembers,
   canManageSharing,
   isAdmin,
+  currentUserId,
 }: MeetingDetailClientProps) {
   const [actionItems, setActionItems] = useState(initialActionItems);
   const [title, setTitle] = useState(meeting.title ?? '');
@@ -462,6 +466,7 @@ export default function MeetingDetailClient({
                         <Badge className="rounded-full bg-emerald-100 text-emerald-800">Completed</Badge>
                       )}
                     </div>
+                    <ActionItemComments actionItemId={item.id} currentUserId={currentUserId} />
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -503,6 +508,12 @@ export default function MeetingDetailClient({
           </CardContent>
         </Card>
       ) : null}
+
+      <Card className="rounded-3xl border-white/60 bg-white/80 shadow-sm backdrop-blur dark:bg-slate-900/70">
+        <CardContent className="pt-6">
+          <MeetingAttachments meetingId={meeting.id} currentUserId={currentUserId} />
+        </CardContent>
+      </Card>
 
       <Dialog open={videoOpen} onOpenChange={setVideoOpen}>
         <DialogContent className="w-full max-w-3xl p-0 sm:max-w-3xl">

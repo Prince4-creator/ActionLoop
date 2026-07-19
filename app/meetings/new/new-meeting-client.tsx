@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { Icons } from '@/components/ui/icons';
-import { ShieldCheck, Video, VideoOff } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Video, VideoOff } from 'lucide-react';
 import { VideoMeeting } from '@/components/video-meeting';
 import { LiveTranscriptPanel } from '@/components/live-transcript-panel';
 import { generateAdhocRoomName } from '@/lib/video-room';
@@ -71,6 +71,14 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-2xl mx-auto"
       >
+        <div className="mb-4">
+          <Link href="/dashboard">
+            <Button variant="outline" size="sm" className="rounded-2xl">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to dashboard
+            </Button>
+          </Link>
+        </div>
+
         <Card className="backdrop-blur-xl bg-white/80 dark:bg-card/90 text-black dark:text-card-foreground border-0 shadow-2xl rounded-2xl">
           <CardHeader>
             <CardTitle className="text-2xl">{isAdmin ? 'New Meeting' : 'Meeting Request'}</CardTitle>
@@ -81,7 +89,7 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            
+
             {isAdmin ? (
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -135,6 +143,7 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
                   {liveMode ? (
                     <div className="mt-4 space-y-3">
                       <CallDisclosureBanner />
+                      <p className="text-xs text-slate-400">Tip: use the expand icon on the video to go fullscreen.</p>
                       <div className="grid gap-3 lg:grid-cols-2">
                         <VideoMeeting roomName={roomName} height={320} />
                         <LiveTranscriptPanel autoStart onTranscriptChange={setLiveTranscriptDraft} />

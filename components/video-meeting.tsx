@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -43,13 +44,24 @@ interface VideoMeetingProps {
   height?: number | string;
   /** If provided, joins as an unauthenticated guest via the public token endpoint */
   guestName?: string;
+  /** Allow the caller to hide the fullscreen toggle (e.g. if already inside a fullscreen dialog) */
+  allowFullscreen?: boolean;
 }
 
-export function VideoMeeting({ roomName, displayName, onClose, height = 560, guestName }: VideoMeetingProps) {
+export function VideoMeeting({
+  roomName,
+  displayName,
+  onClose,
+  height = 560,
+  guestName,
+  allowFullscreen = true,
+}: VideoMeetingProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +128,27 @@ export function VideoMeeting({ roomName, displayName, onClose, height = 560, gue
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomName]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!wrapperRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        await wrapperRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Fullscreen API can be blocked by browser/user settings — fail silently, button stays available.
+    }
+  };
+
   if (error) {
     return (
       <div className="flex h-full items-center justify-center rounded-2xl bg-slate-950/90 p-6 text-center text-sm text-white">
@@ -125,11 +158,30 @@ export function VideoMeeting({ roomName, displayName, onClose, height = 560, gue
   }
 
   return (
-    <div className="relative w-full overflow-hidden rounded-2xl bg-slate-950" style={{ height }}>
+    <div
+      ref={wrapperRef}
+      className={
+        isFullscreen
+          ? 'relative w-full h-screen overflow-hidden bg-slate-950'
+          : 'relative w-full overflow-hidden rounded-2xl bg-slate-950'
+      }
+      style={isFullscreen ? undefined : { height }}
+    >
       {isLoading ? (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-300">
           Loading video call…
         </div>
+      ) : null}
+      {allowFullscreen && !isLoading && !error ? (
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition hover:bg-black/70"
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        >
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </button>
       ) : null}
       <div ref={containerRef} className="h-full w-full" />
     </div>

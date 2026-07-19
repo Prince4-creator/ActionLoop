@@ -151,6 +151,7 @@ export default async function MeetingDetailPage({
         initialSharedMembers={sharedMembers}
         canManageSharing={canManageSharing}
         isAdmin={isAdmin}
+        currentUserId={user.id}
       />
     </AppShell>
   );
