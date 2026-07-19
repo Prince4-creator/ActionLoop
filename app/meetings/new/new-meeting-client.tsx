@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CallDisclosureBanner } from '@/components/ui/call-disclosure-banner';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
@@ -80,6 +81,7 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            
             {isAdmin ? (
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -127,10 +129,16 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
                     )}
                   </div>
 
+                  {/* Shown before the call starts, so the disclosure is read before the mic goes live. */}
+                  {!liveMode ? <CallDisclosureBanner className="mt-3" /> : null}
+
                   {liveMode ? (
-                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                      <VideoMeeting roomName={roomName} height={320} />
-                      <LiveTranscriptPanel autoStart onTranscriptChange={setLiveTranscriptDraft} />
+                    <div className="mt-4 space-y-3">
+                      <CallDisclosureBanner />
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <VideoMeeting roomName={roomName} height={320} />
+                        <LiveTranscriptPanel autoStart onTranscriptChange={setLiveTranscriptDraft} />
+                      </div>
                     </div>
                   ) : null}
                 </div>
