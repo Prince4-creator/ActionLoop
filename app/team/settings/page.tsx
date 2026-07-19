@@ -56,6 +56,7 @@ export default async function TeamSettingsPage() {
         teamName={team.name || 'Team'}
         teamMembers={teamMembers}
         userRole={userMembership?.role || 'member'}
+        currentUserId={user.id}
       />
     </AppShell>
   );
