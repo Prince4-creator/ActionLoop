@@ -330,10 +330,10 @@ export function AppShell({ children, user, currentPath, title, description, acti
                 {actions}
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon-sm"
                   onClick={openCommandPalette}
                   className={cn(
-                    'hidden rounded-xl sm:inline-flex',
+                    'rounded-xl sm:h-8 sm:w-auto sm:px-3',
                     isAdmin
                       ? 'border-indigo-200 bg-white text-slate-900 hover:bg-indigo-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10'
                       : ''
@@ -341,7 +341,7 @@ export function AppShell({ children, user, currentPath, title, description, acti
                   aria-label="Open command palette"
                 >
                   <Search className="h-4 w-4" />
-                  <kbd className="ml-2 text-[10px] font-medium opacity-60">⌘K</kbd>
+                  <kbd className="ml-2 hidden text-[10px] font-medium opacity-60 sm:inline">⌘K</kbd>
                 </Button>
                 <Button
                   variant="outline"
