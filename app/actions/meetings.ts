@@ -775,6 +775,10 @@ export async function markActionItemDone(actionItemId: string) {
     throw new Error('Not authenticated');
   }
 
+  if (!isAdminUser(user)) {
+    throw new Error('Only admins can mark action items as done.');
+  }
+
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
@@ -785,18 +789,17 @@ export async function markActionItemDone(actionItemId: string) {
     .maybeSingle();
 
   if (itemError) throw itemError;
+  if (!item) throw new Error('Action item not found');
 
   const { error } = await client.from('action_items').update({ status: 'done' }).eq('id', actionItemId);
 
   if (error) throw error;
 
   if (item?.meeting_id) {
-    // Recalculate the meeting's follow-through / outcome score based on the
-    // new completion ratio of its action items.
     await recalculateOutcomeScore(client, item.meeting_id);
 
-    const { data: meeting } = await client.from('meetings').select('id, title, team_id').eq('id', item.meeting_id).maybeSingle();
-    if (meeting?.team_id) {
+    const { data: meetingForNotify } = await client.from('meetings').select('id, title, team_id').eq('id', item.meeting_id).maybeSingle();
+    if (meetingForNotify?.team_id) {
       const { data: remainingItems } = await client
         .from('action_items')
         .select('id')
@@ -805,7 +808,7 @@ export async function markActionItemDone(actionItemId: string) {
 
       if (!remainingItems?.length) {
         revalidatePath('/team');
-        return { completedMeeting: meeting };
+        return { completedMeeting: meetingForNotify };
       }
     }
   }

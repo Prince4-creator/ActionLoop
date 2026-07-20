@@ -70,11 +70,16 @@ export default function DashboardClient({
     : 'from-emerald-600 via-teal-600 to-cyan-600';
 
   const handleDone = async (itemId: string) => {
+    const currentItems = pendingItems;
     setPendingItems((current) => current.filter((item) => item.id !== itemId));
     try {
       await markActionItemDone(itemId);
       toast.success('Action item marked as done');
+      // Re-fetch the server component so averageOutcomeScore (and other
+      // server-computed props) reflect the recalculated follow-through score.
+      router.refresh();
     } catch {
+      setPendingItems(currentItems);
       toast.error('Unable to update that action item');
     }
   };
@@ -134,14 +139,14 @@ export default function DashboardClient({
  return (
     <div className={isAdmin
       ? 'min-h-screen'
-      : 'min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_45%),linear-gradient(135deg,_#f8fbff_0%,_#eef7ff_100%)]'
+      : 'min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_45%),linear-gradient(135deg,_#f8fbff_0%,_#eef7ff_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.15),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_100%)] dark:bg-none'
     }>
       <div className="mx-auto flex w-full max-w-full flex-1 flex-col p-6 lg:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">
-             {isAdmin ? 'Admin Control Center' : 'Your Meeting Hub'}
-            </h1>
+           <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">
+              {isAdmin ? 'Admin Control Center' : 'Your Workspace Pulse'}
+           </h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge className={isAdmin ? 'rounded-full bg-blue-100 text-blue-800 hover:bg-blue-100' : 'rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100'}>
