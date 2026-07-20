@@ -72,10 +72,19 @@ export default async function DashboardPage() {
     ? Math.round(meetingList.reduce((sum, meeting) => sum + (meeting.outcome_score ?? 0), 0) / meetingList.length)
     : 0;
 
+  // Username set at sign-up (used to assign action items by spoken name in
+  // meeting transcripts) — also shown here as a nicer dashboard greeting
+  // than the email-derived fallback.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', user.id)
+    .maybeSingle();
+
   return (
     <AppShell user={user} currentPath="/dashboard" title="Dashboard" description="Monitor your meetings and workspace progress">
       <DashboardClient
-        user={user}
+        user={{ id: user.id, email: user.email, username: profile?.username ?? null }}
         isAdmin={isAdmin}
         meetings={meetingList}
         counts={{ total: meetingList.length, your: yourMeetingsCount, shared: sharedMeetingsCount }}

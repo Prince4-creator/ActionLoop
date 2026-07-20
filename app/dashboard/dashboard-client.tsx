@@ -43,7 +43,7 @@ export default function DashboardClient({
   completionPercent,
   averageOutcomeScore,
 }: {
-  user: { id?: string; email?: string | null };
+  user: { id?: string; email?: string | null; username?: string | null };
   isAdmin: boolean;
   meetings: MeetingSummary[];
   counts: { total: number; your: number; shared: number };
@@ -58,6 +58,7 @@ export default function DashboardClient({
   const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [reminderLimit, setReminderLimit] = useState(10);
   const isOwner = (meeting: MeetingSummary) => meeting.user_id === user.id;
+  const displayName = user.username?.trim() || user.email?.split('@')[0] || 'there';
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -78,9 +79,9 @@ export default function DashboardClient({
       // Re-fetch the server component so averageOutcomeScore (and other
       // server-computed props) reflect the recalculated follow-through score.
       router.refresh();
-    } catch {
+    } catch (error) {
       setPendingItems(currentItems);
-      toast.error('Unable to update that action item');
+      toast.error(error instanceof Error ? error.message : 'Unable to update that action item');
     }
   };
 
@@ -202,7 +203,7 @@ export default function DashboardClient({
                     {isAdmin ? 'Monitoring all meetings' : 'Focused on your flow'}
                   </Badge>
                 </div>
-                <h2 className="text-2xl font-semibold sm:text-3xl">Welcome back, {user.email?.split('@')[0] || 'there'}</h2>
+                <h2 className="text-2xl font-semibold sm:text-3xl">Welcome back, {displayName}</h2>
                 <p className="mt-2 max-w-xl text-sm text-blue-50 sm:text-base">
                   {isAdmin
                     ? 'Keep an eye on every meeting, review progress, and stay on top of the workspace.'

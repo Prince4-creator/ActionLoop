@@ -815,21 +815,29 @@ export async function markActionItemDone(actionItemId: string) {
     throw new Error('Not authenticated');
   }
 
-  if (!isAdminUser(user)) {
-    throw new Error('Only admins can mark action items as done.');
-  }
-
   const adminClient = createAdminClient();
   const client = adminClient ?? supabase;
 
   const { data: item, error: itemError } = await client
     .from('action_items')
-    .select('id, meeting_id')
+    .select('id, meeting_id, assignee_email')
     .eq('id', actionItemId)
     .maybeSingle();
 
   if (itemError) throw itemError;
   if (!item) throw new Error('Action item not found');
+
+  // Anyone can complete their OWN assigned item; admins can complete any
+  // item. This intentionally does NOT restrict completion to admins only —
+  // the whole point of the dashboard's "mark done" button is that the
+  // person the task was assigned to can close it out themselves.
+  const isAssignee = Boolean(
+    item.assignee_email && user.email && item.assignee_email.toLowerCase() === user.email.toLowerCase()
+  );
+
+  if (!isAdminUser(user) && !isAssignee) {
+    throw new Error('Only the assignee or an admin can mark this action item as done.');
+  }
 
   const { error } = await client.from('action_items').update({ status: 'done' }).eq('id', actionItemId);
 

@@ -138,16 +138,36 @@ export async function getTeamMembersWithEmails(
         userMap.set(user.id, user.email ?? null);
       }
     } catch {
-      // ignore
+      // ignore auth lookup failures and fall back to user ids
     }
   }
 
-  const userIds = memberships.map((m) => m.user_id);
-  const { data: profileRows } = await client
-    .from('profiles')
-    .select('id, username')
-    .in('id', userIds);
-  const usernameMap = new Map((profileRows ?? []).map((p) => [p.id, p.username as string | null]));
+  // Pull usernames from profiles for these members. Missing table/column is
+  // handled the same way the rest of this file treats optional schema —
+  // degrade to null usernames rather than failing the whole lookup, since
+  // callers (like the transcript assignee-matcher) already fall back to
+  // email-guessing when no username is available.
+  const usernameMap = new Map<string, string | null>();
+  const memberIds = memberships.map((m) => m.user_id);
+
+  try {
+    const { data: profileRows, error: profilesError } = await client
+      .from('profiles')
+      .select('id, username')
+      .in('id', memberIds);
+
+    if (profilesError) {
+      if (!isMissingTableError(profilesError)) {
+        console.error('[teams] username lookup failed', profilesError);
+      }
+    } else {
+      for (const row of profileRows ?? []) {
+        usernameMap.set(row.id, row.username ?? null);
+      }
+    }
+  } catch (error) {
+    console.error('[teams] username lookup threw', error);
+  }
 
   return memberships.map((membership) => ({
     ...membership,
