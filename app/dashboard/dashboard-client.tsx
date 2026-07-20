@@ -139,7 +139,7 @@ export default function DashboardClient({
       <div className="mx-auto flex w-full max-w-full flex-1 flex-col p-6 lg:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className={cn('text-3xl font-semibold', isAdmin ? 'text-white' : 'text-slate-900')}>
+            <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">
              {isAdmin ? 'Admin Control Center' : 'Your Meeting Hub'}
             </h1>
           </div>

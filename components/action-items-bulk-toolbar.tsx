@@ -43,9 +43,17 @@ export function ActionItemsBulkToolbar({
   const [isPending, setIsPending] = useState(false);
 
   const selectableItems = items.filter((item) => item.status !== 'done');
-  const allSelected = selectableItems.length > 0 && selectableItems.every((item) => selectedIds.has(item.id));
+  const hasSelectableItems = selectableItems.length > 0;
+  const allSelected = hasSelectableItems && selectableItems.every((item) => selectedIds.has(item.id));
 
   const toggleSelectAll = () => {
+    if (!hasSelectableItems) {
+      // Nothing to select — everything currently in view is already done.
+      // Surface that instead of leaving the click looking like it did nothing.
+      toast.info('Nothing to select — every item here is already marked done.');
+      return;
+    }
+
     if (allSelected) {
       onSelectedIdsChange(new Set());
       return;
@@ -82,7 +90,14 @@ export function ActionItemsBulkToolbar({
       <button
         type="button"
         onClick={toggleSelectAll}
-        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+        disabled={!hasSelectableItems}
+        aria-disabled={!hasSelectableItems}
+        title={hasSelectableItems ? undefined : 'Everything in this view is already done'}
+        className={
+          hasSelectableItems
+            ? 'flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground'
+            : 'flex items-center gap-2 text-xs text-muted-foreground/50 cursor-not-allowed'
+        }
       >
         {allSelected ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
         Select all

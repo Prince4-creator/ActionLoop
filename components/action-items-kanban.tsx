@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { CheckCircle2, Circle, Clock3, ChevronRight, ChevronLeft } from 'lucide-react';
 import { markActionItemDone } from '@/app/actions/meetings';
+import { ZombieTaskBadge } from '@/components/zombie-task-badge';
 
 /**
  * Kanban board for a meeting's action items: Pending / Overdue / Done columns.
@@ -34,6 +35,7 @@ type ActionItemRecord = {
   assignee_email: string;
   due_date: string | null;
   status: string;
+  recurrence_count?: number | null;
 };
 
 const COLUMNS = [
@@ -115,6 +117,11 @@ export function ActionItemsKanban({
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       {item.assignee_email} · {item.due_date ? new Date(item.due_date).toLocaleDateString() : 'No due date'}
                     </p>
+                    {item.recurrence_count ? (
+                      <div className="mt-2">
+                        <ZombieTaskBadge recurrenceCount={item.recurrence_count} />
+                      </div>
+                    ) : null}
                     <div className="mt-2.5 flex items-center gap-1.5">
                       {column.key !== 'done' ? (
                         <Button

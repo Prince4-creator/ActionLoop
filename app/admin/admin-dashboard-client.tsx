@@ -31,6 +31,8 @@ import {
   Square,
   Download,
   ChevronDown,
+  Flame,
+  ShieldAlert,
 } from 'lucide-react';
 import SetupTotpClient from './setup-totp/setup-totp-client';
 import { describeAuditAction, type AuditLogEntry } from '@/lib/audit';
@@ -287,11 +289,22 @@ export default function AdminDashboardClient({
               requests, and monitor the workspace from one place.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/admin/requests">
               <Button className="rounded-2xl border border-white/20 bg-white/10 text-white backdrop-blur hover:bg-white/20">
                 <Inbox className="mr-2 h-4 w-4" /> Requests
                 <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+            <Link href="/admin/zombie-tasks">
+              <Button className="rounded-2xl border border-white/20 bg-white/10 text-white backdrop-blur hover:bg-white/20">
+                <Flame className="mr-2 h-4 w-4" /> Zombie tasks
+                <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+            <Link href="/team">
+              <Button variant="outline" className="rounded-2xl border-white/30 bg-transparent text-white hover:bg-white/10">
+                <ShieldAlert className="mr-2 h-4 w-4" /> Accountability
               </Button>
             </Link>
             <Link href="/dashboard">

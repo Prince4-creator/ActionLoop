@@ -6,7 +6,9 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 import { isAdminUser } from '@/lib/auth';
-import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';import OpenAI from 'openai';
+import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';
+import { linkRecurringActionItems } from '@/lib/zombie-detection';
+import OpenAI from 'openai';
 import { sendTeamReminder } from '@/lib/reminders';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mistral } from '@mistralai/mistralai';
@@ -680,12 +682,18 @@ export async function createMeetingAndExtractActions(formData: FormData) {
     status: 'pending',
   }));
 
-  const { error: itemsError } = await writeClient
+  // .select(...) here matters: we need the generated ids back so the
+  // zombie-task linker can compare each new item against existing open
+  // items and chain matches via previous_occurrence_id.
+  let insertedActionItems: Array<{ id: string; description: string; assignee_email: string | null }> | null = null;
+
+  const { data: insertedItemsData, error: itemsError } = await writeClient
     .from('action_items')
-    .insert(actionItems);
+    .insert(actionItems)
+    .select('id, description, assignee_email');
 
   if (itemsError && teamId) {
-    const { error: fallbackItemsError } = await writeClient
+    const { data: fallbackInsertedItems, error: fallbackItemsError } = await writeClient
       .from('action_items')
       .insert(
         output.action_items.map((item: ActionItem) => ({
@@ -695,7 +703,8 @@ export async function createMeetingAndExtractActions(formData: FormData) {
           due_date: item.due_date || null,
           status: 'pending',
         }))
-      );
+      )
+      .select('id, description, assignee_email');
 
     if (fallbackItemsError) {
       console.error('[meetings] fallback insert action_items error', fallbackItemsError);
@@ -704,11 +713,22 @@ export async function createMeetingAndExtractActions(formData: FormData) {
           (fallbackItemsError.message ?? JSON.stringify(fallbackItemsError))
       );
     }
+    insertedActionItems = fallbackInsertedItems ?? null;
   } else if (itemsError) {
     throw new Error(
       'Action items insert failed: ' +
         (itemsError.message ?? JSON.stringify(itemsError))
     );
+  } else {
+    insertedActionItems = insertedItemsData ?? null;
+  }
+
+  // Fuzzy-match each newly created action item against this assignee's other
+  // still-open items on the team. Matches get chained via
+  // previous_occurrence_id / recurrence_count, and flagged is_zombie once the
+  // same ask has resurfaced 3+ times without being completed.
+  if (teamId && insertedActionItems?.length) {
+    await linkRecurringActionItems(writeClient, teamId, insertedActionItems);
   }
 
   // Notify assignees immediately when the meeting is created, instead of

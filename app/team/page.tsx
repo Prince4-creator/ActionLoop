@@ -2,6 +2,9 @@ import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
 import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';
+import { isAdminUser } from '@/lib/auth';
+import { createAdminClient } from '@/lib/admin';
+import { getTeamAccountability, type AccountabilityRow } from '@/lib/accountability';
 import TeamClient from './team-client';
 
 export default async function TeamPage() {
@@ -22,7 +25,23 @@ export default async function TeamPage() {
     );
   }
 
-  const { data: team } = await supabase.from('teams').select('id, name, owner_id, created_at').eq('id', teamId).maybeSingle();
+  const isAdmin = isAdminUser(user);
+
+  // Use the admin client when available so this read isn't at the mercy of
+  // the "teams_select_members" RLS policy — without it, a null `team` here
+  // silently breaks the invite button downstream (team?.id becomes
+  // undefined, and /api/team/invite rejects the request).
+  const adminClient = createAdminClient();
+  const teamsClient = adminClient ?? supabase;
+  const { data: team, error: teamError } = await teamsClient
+    .from('teams')
+    .select('id, name, owner_id, created_at')
+    .eq('id', teamId)
+    .maybeSingle();
+
+  if (teamError) {
+    console.error('[team/page] failed to load team row', teamError);
+  }
 
   const members = await getTeamMembersWithEmails(supabase, teamId);
 
@@ -58,9 +77,28 @@ export default async function TeamPage() {
 
   const leaderboard = memberScores.sort((a, b) => b.score - a.score || a.email?.localeCompare(b.email ?? '') || 0);
 
+  // Admin-only: lifetime on-time-completion accountability, separate from
+  // the monthly leaderboard score above (which only counts the current month
+  // and doesn't factor in whether items were completed on time vs. late).
+  let accountability: AccountabilityRow[] = [];
+  if (isAdmin) {
+    try {
+      accountability = await getTeamAccountability(supabase, teamId);
+    } catch (error) {
+      console.error('[team/page] failed to load accountability', error);
+    }
+  }
+
   return (
     <AppShell user={user} currentPath="/team" title="Team" description={team?.name || 'Your team workspace'}>
-      <TeamClient team={team} members={leaderboard} currentUserId={user.id} currentUserEmail={user.email} />
+      <TeamClient
+        team={team}
+        members={leaderboard}
+        currentUserId={user.id}
+        currentUserEmail={user.email}
+        isAdmin={isAdmin}
+        accountability={accountability}
+      />
     </AppShell>
   );
 }

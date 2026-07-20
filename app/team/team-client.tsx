@@ -6,14 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Crown, MailPlus, Sparkles, Users } from 'lucide-react';
+import { Crown, MailPlus, Sparkles, Users, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
+import type { AccountabilityRow } from '@/lib/accountability';
 
 export default function TeamClient({
   team,
   members,
   currentUserId,
   currentUserEmail,
+  isAdmin = false,
+  accountability = [],
 }: {
   team: { id: string; name: string; owner_id: string; created_at: string | null } | null;
   members: Array<{
@@ -27,6 +30,8 @@ export default function TeamClient({
   }>;
   currentUserId: string;
   currentUserEmail: string | null | undefined;
+  isAdmin?: boolean;
+  accountability?: AccountabilityRow[];
 }) {
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
@@ -55,6 +60,13 @@ export default function TeamClient({
   };
 
   const sortedMembers = useMemo(() => members, [members]);
+
+  const accountabilityBadgeClass = (score: number | null) => {
+    if (score === null) return 'bg-slate-100 text-slate-600';
+    if (score >= 80) return 'bg-emerald-100 text-emerald-800';
+    if (score >= 50) return 'bg-amber-100 text-amber-800';
+    return 'bg-red-100 text-red-800';
+  };
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -96,6 +108,43 @@ export default function TeamClient({
           </div>
         </CardContent>
       </Card>
+
+      {isAdmin ? (
+        <Card className="rounded-3xl border-white/60 bg-white/80 shadow-sm backdrop-blur dark:bg-slate-900/70">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-slate-700" />
+              <CardTitle className="text-xl">Accountability</CardTitle>
+            </div>
+            <CardDescription>
+              Who follows through on time, across every action item they&apos;ve ever been assigned. Admin-only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {accountability.length ? (
+              accountability.map((row) => (
+                <div
+                  key={row.email}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-900">{row.email}</p>
+                    <p className="text-sm text-slate-500">
+                      {row.onTime} on time · {row.late} late · {row.missed} missed
+                      {row.openNotYetDue ? ` · ${row.openNotYetDue} not yet due` : ''}
+                    </p>
+                  </div>
+                  <Badge className={`rounded-full ${accountabilityBadgeClass(row.scorePercent)}`}>
+                    {row.scorePercent === null ? 'No data yet' : `${row.scorePercent}% on time`}
+                  </Badge>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No judged action items yet — scores appear once items are done or overdue.</p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="rounded-3xl border-white/60 bg-white/80 shadow-sm backdrop-blur dark:bg-slate-900/70">
         <CardHeader>

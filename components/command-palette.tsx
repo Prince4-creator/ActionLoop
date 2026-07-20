@@ -13,6 +13,7 @@ import {
   Plus,
   Inbox,
   KeyRound,
+  Flame,
   CornerDownLeft,
 } from 'lucide-react';
 
@@ -41,11 +42,12 @@ const BASE_ITEMS: CommandItem[] = [
   { id: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutGrid, keywords: 'home overview' },
   { id: 'meetings', label: 'Meetings', href: '/meetings', icon: Users, keywords: 'browse history' },
   { id: 'new-meeting', label: 'New meeting', href: '/meetings/new', icon: Plus, keywords: 'create transcript extract' },
-  { id: 'team', label: 'Team', href: '/team', icon: Users, keywords: 'leaderboard members' },
+  { id: 'team', label: 'Team', href: '/team', icon: Users, keywords: 'leaderboard members accountability' },
   { id: 'team-settings', label: 'Team settings', href: '/team/settings', icon: Users, keywords: 'invite members roles' },
   { id: 'settings', label: 'Settings', href: '/settings', icon: Settings, keywords: 'slack nudges preferences' },
   { id: 'admin', label: 'Admin dashboard', href: '/admin', icon: ShieldCheck, keywords: 'control center users', adminOnly: true },
   { id: 'admin-requests', label: 'Meeting requests', href: '/admin/requests', icon: Inbox, keywords: 'convert pending', adminOnly: true },
+  { id: 'admin-zombie-tasks', label: 'Zombie tasks', href: '/admin/zombie-tasks', icon: Flame, keywords: 'recurring repeated stale never done', adminOnly: true },
   { id: 'admin-totp', label: 'Two-factor setup', href: '/admin/setup-totp', icon: KeyRound, keywords: 'authenticator 2fa security', adminOnly: true },
 ];
 
