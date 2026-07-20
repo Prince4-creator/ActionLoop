@@ -126,7 +126,7 @@ export async function getTeamMembersWithEmails(
     .order('joined_at', { ascending: true });
 
   if (error || !memberships?.length) {
-    return [] as Array<{ user_id: string; role: string; joined_at: string | null; email: string | null }>;
+    return [] as Array<{ user_id: string; role: string; joined_at: string | null; email: string | null; username: string | null }>;
   }
 
   const userMap = new Map<string, string | null>();
@@ -138,13 +138,21 @@ export async function getTeamMembersWithEmails(
         userMap.set(user.id, user.email ?? null);
       }
     } catch {
-      // ignore auth lookup failures and fall back to user ids
+      // ignore
     }
   }
+
+  const userIds = memberships.map((m) => m.user_id);
+  const { data: profileRows } = await client
+    .from('profiles')
+    .select('id, username')
+    .in('id', userIds);
+  const usernameMap = new Map((profileRows ?? []).map((p) => [p.id, p.username as string | null]));
 
   return memberships.map((membership) => ({
     ...membership,
     email: userMap.get(membership.user_id) ?? null,
+    username: usernameMap.get(membership.user_id) ?? null,
   }));
 }
 

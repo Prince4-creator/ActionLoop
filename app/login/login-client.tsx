@@ -21,6 +21,7 @@ export default function LoginClient() {
 
   const [email, setEmail] = useState(() => (inviteEmail ? decodeURIComponent(inviteEmail) : ''));
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(() => Boolean(inviteToken));
   const supabase = createClient();
@@ -35,6 +36,21 @@ export default function LoginClient() {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         if (data.user?.id) {
+          const cleanUsername = username.trim().toLowerCase();
+          if (cleanUsername) {
+            const { error: profileError } = await supabase
+              .from('profiles')
+              .upsert({ id: data.user.id, email, username: cleanUsername }, { onConflict: 'id' });
+
+            if (profileError) {
+              if (profileError.code === '23505' || profileError.message?.includes('duplicate')) {
+                toast.error('That username is taken. You can set a different one later in Settings.');
+              } else {
+                console.error('Failed to save username:', profileError);
+              }
+            }
+          }
+
           await fetch('/api/teams/ensure-default', { method: 'POST' });
 
           if (inviteToken) {
@@ -182,10 +198,24 @@ export default function LoginClient() {
                         className="rounded-2xl bg-slate-50 text-slate-900 placeholder:text-slate-500 focus:bg-white focus:border-slate-300 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-slate-500"
                       />
                     </div>
+                    {isSignUp ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="username" className="text-slate-700 font-semibold uppercase text-[0.65rem] lg:text-sm tracking-[0.2em] dark:text-slate-200">Username</Label>
+                        <Input
+                          id="username"
+                          placeholder="bob"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          required
+                          className="rounded-2xl bg-slate-50 text-slate-900 placeholder:text-slate-500 focus:bg-white focus:border-slate-300 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-slate-500"
+                        />
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Say this name in meetings to assign tasks to yourself.</p>
+                      </div>
+                    ) : null}
                     <Button
                       type="submit"
                       className="w-full h-13 rounded-xl bg-blue-600 text-white hover:bg-blue-500 focus-visible:ring-blue-300 font-semibold text-sm shadow-lg shadow-blue-600/20 transition-all"
-                      disabled={isLoading || !email || !password}
+                      disabled={isLoading || !email || !password || (isSignUp && !username.trim())}
                     >
                       {isLoading && <Icons.spinner className="mr-2 h-5 w-5 animate-spin" />}
                       {isSignUp ? 'Create account' : 'Sign in'}

@@ -24,10 +24,11 @@ const actionItemSchema = {
   additionalProperties: false,
   properties: {
     description: { type: 'string' },
+    assignee_username: { type: ['string', 'null'] },
     assignee_email: { type: 'string' },
     due_date: { type: ['string', 'null'] },
   },
-  required: ['description', 'assignee_email', 'due_date'],
+  required: ['description', 'assignee_username', 'assignee_email', 'due_date'],
 } as const;
 
 const extractionSchema = {
@@ -49,6 +50,7 @@ const extractionSchema = {
 
 interface ActionItem {
   description: string;
+  assignee_username: string | null;
   assignee_email: string;
   due_date: string | null;
 }
@@ -67,8 +69,8 @@ const EXTRACTION_INSTRUCTIONS = `Analyze the meeting transcript and extract:
 - A summary (1-3 sentences).
 - The desired outcome of the meeting.
 - The decision made during the meeting.
-- Notes: any side comments, caveats, context, blockers, or FYIs mentioned that are NOT a decision and NOT an action item someone is assigned to do (for example: "this depends on legal sign-off", "budget numbers are still pending finance", "this is a tentative date"). Use null if there is nothing that fits this.
-- Action items with description, assignee email (from context, or "unassigned@example.com" if unclear), and due date (YYYY-MM-DD format if mentioned, otherwise null).`;
+- Notes: any side comments, caveats, context, blockers, or FYIs mentioned that are NOT a decision and NOT an action item someone is assigned to do. Use null if there is nothing that fits this.
+- Action items with description, assignee_username (the exact name or username spoken/mentioned for the assignee, stripped of any leading @ symbol, or null if no name was mentioned), assignee_email (guess "name@example.com" using that same name if mentioned, otherwise "unassigned@example.com"), and due date (YYYY-MM-DD format if mentioned, otherwise null).`;
 
 function parseExtractedMeeting(rawText: string): ExtractedMeeting {
   const cleanText = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -104,6 +106,11 @@ function parseExtractedMeeting(rawText: string): ExtractedMeeting {
       throw new Error('AI response included an invalid action item description. Try again.');
     }
 
+    const assigneeUsername =
+      typeof (item as any).assignee_username === 'string' && (item as any).assignee_username.trim()
+        ? (item as any).assignee_username.trim()
+        : null;
+
     const assigneeEmail =
       typeof (item as any).assignee_email === 'string' && (item as any).assignee_email.trim()
         ? (item as any).assignee_email
@@ -125,6 +132,7 @@ function parseExtractedMeeting(rawText: string): ExtractedMeeting {
 
     return {
       description,
+      assignee_username: assigneeUsername,
       assignee_email: assigneeEmail,
       due_date: typeof dueDateRaw === 'string' && dueDateRaw.trim() ? dueDateRaw.trim() : null,
     };
@@ -200,6 +208,30 @@ function resolveAssigneeEmail(
   }
 
   return 'unassigned@example.com';
+}
+
+function normalizeUsername(value: string) {
+  return value.trim().toLowerCase().replace(/^@/, '');
+}
+
+// Prefer an exact username match (reliable, since usernames are explicit
+// tokens set at signup) over the fuzzy email-guessing fallback below.
+function resolveAssignee(
+  candidateUsername: string | null | undefined,
+  candidateEmail: string,
+  teamMembers: Array<{ email: string | null; username?: string | null }>
+): string {
+  if (candidateUsername) {
+    const normalized = normalizeUsername(candidateUsername);
+    const usernameMatch = teamMembers.find(
+      (member) => member.username && normalizeUsername(member.username) === normalized
+    );
+    if (usernameMatch?.email) {
+      return usernameMatch.email;
+    }
+  }
+
+  return resolveAssigneeEmail(candidateEmail, teamMembers);
 }
 
 function normalizeMistralContent(content: unknown): string {
@@ -308,6 +340,7 @@ function extractLocally(transcript: string): ExtractedMeeting {
       if (/\b(will|can|should|needs|plans?|must|to\s+|by\s+\d{4}-\d{2}-\d{2})\b/i.test(body)) {
         action_items.push({
           description: `${name}: ${body}`,
+          assignee_username: name.toLowerCase(),
           assignee_email: `${name.toLowerCase()}@example.com`,
           due_date: null,
         });
@@ -319,13 +352,19 @@ function extractLocally(transcript: string): ExtractedMeeting {
       const m = line.match(/^([A-Z][a-z]+)\b/);
       const name = m ? m[1] : null;
       const email = name ? `${name.toLowerCase()}@example.com` : 'unassigned@example.com';
-      action_items.push({ description: line, assignee_email: email, due_date: null });
+      action_items.push({
+        description: line,
+        assignee_username: name ? name.toLowerCase() : null,
+        assignee_email: email,
+        due_date: null,
+      });
     }
   }
 
   if (!action_items.length) {
     action_items.push({
       description: sentences.slice(0, 2).join('. '),
+      assignee_username: null,
       assignee_email: 'unassigned@example.com',
       due_date: null,
     });
@@ -438,6 +477,7 @@ async function extractWithGemini(transcript: string): Promise<ExtractedMeeting> 
   "action_items": [
     {
       "description": "task description",
+      "assignee_username": "username mentioned, stripped of leading @, or null",
       "assignee_email": "person@example.com",
       "due_date": "YYYY-MM-DD or null"
     }
@@ -676,7 +716,7 @@ export async function createMeetingAndExtractActions(formData: FormData) {
 
   const actionItems = output.action_items.map((item: ActionItem) => ({
     meeting_id: meeting.id,
-    assignee_email: resolveAssigneeEmail(item.assignee_email || '', teamMembers),
+    assignee_email: resolveAssignee(item.assignee_username, item.assignee_email || '', teamMembers),
     description: item.description,
     due_date: item.due_date ? item.due_date : null,
     status: 'pending',
@@ -698,7 +738,7 @@ export async function createMeetingAndExtractActions(formData: FormData) {
       .insert(
         output.action_items.map((item: ActionItem) => ({
           meeting_id: meeting.id,
-          assignee_email: resolveAssigneeEmail(item.assignee_email || '', teamMembers),
+          assignee_email: resolveAssignee(item.assignee_username, item.assignee_email || '', teamMembers),
           description: item.description,
           due_date: item.due_date || null,
           status: 'pending',

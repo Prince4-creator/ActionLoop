@@ -41,6 +41,7 @@ const AVATAR_GRADIENTS = [
 ];
 
 const ADMIN_GRADIENT = 'from-indigo-500 to-violet-600';
+const SIDEBAR_STORAGE_KEY = 'actionloop:sidebarOpen';
 
 function gradientForString(value: string) {
   let hash = 0;
@@ -53,6 +54,9 @@ function gradientForString(value: string) {
 export function AppShell({ children, user, currentPath, title, description, actions }: AppShellProps) {
   const router = useRouter();
   const { theme, mounted, setTheme } = useTheme();
+  // Default to true so server-rendered HTML and the first client paint
+  // match (avoids a hydration warning); the real stored preference is
+  // applied in the effect below, right after mount.
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(220);
@@ -60,6 +64,25 @@ export function AppShell({ children, user, currentPath, title, description, acti
   const supabase = createClient();
 
   const isAdmin = isAdminUser(user);
+
+  // Restore the sidebar collapsed/expanded preference on every mount —
+  // AppShell remounts on each navigation (it's rendered per-page, not as
+  // a shared layout), so without this the sidebar snaps back open every
+  // time you move to a different page.
+  useEffect(() => {
+    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (stored !== null) {
+      setSidebarOpen(stored === 'true');
+    }
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     const updateHeaderHeight = () => {
@@ -315,7 +338,7 @@ export function AppShell({ children, user, currentPath, title, description, acti
                       : 'border-slate-200 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
                   )}
                   aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-                  onClick={() => setSidebarOpen((prev) => !prev)}
+                  onClick={toggleSidebar}
                 >
                   {sidebarOpen ? <XIcon className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
                 </Button>
