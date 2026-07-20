@@ -7,6 +7,9 @@ import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ActionItemsKanban } from '@/components/action-items-kanban';
+import { ActionItemsBulkToolbar } from '@/components/action-items-bulk-toolbar';
+import { useUndoableDelete } from '@/components/use-undoable-delete';
 import { MeetingAttachments } from '@/components/meeting-attachments';
 import { ActionItemComments } from '@/components/action-item-comments';
 import { Link2 } from 'lucide-react';
@@ -15,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { sendReminderForItem, deleteMeeting } from '@/utils/api';
 import { markActionItemDone } from '@/app/actions/meetings';
-import { ArrowLeft, CheckCircle2, Copy, Download, Filter, ListTodo, Video } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CheckSquare, Copy, Download, Filter, ListTodo, Square, Video } from 'lucide-react';
 import MeetingShareForm from './meeting-share-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { VideoMeeting } from '@/components/video-meeting';
@@ -65,6 +68,9 @@ export default function MeetingDetailClient({
   currentUserId,
 }: MeetingDetailClientProps) {
   const [actionItems, setActionItems] = useState(initialActionItems);
+  const [view, setView] = useState<'list' | 'board'>('list');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { runWithUndo } = useUndoableDelete();
   const [title, setTitle] = useState(meeting.title ?? '');
   const [summary, setSummary] = useState(meeting.summary ?? '');
   const [notes, setNotes] = useState(meeting.notes ?? '');
@@ -121,20 +127,20 @@ export default function MeetingDetailClient({
     }
   };
 
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDeleteMeeting = async () => {
+  const handleDeleteMeeting = () => {
     if (!confirm('Delete this meeting and all its action items? This cannot be undone.')) return;
-    setDeleting(true);
-    try {
-      await deleteMeeting(meeting.id);
-      toast.success('Meeting deleted');
-      router.push('/dashboard');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Unable to delete meeting');
-    } finally {
-      setDeleting(false);
-    }
+    runWithUndo({
+      label: 'Meeting deleted',
+      delayMs: 6000,
+      onCommit: async () => {
+        try {
+          await deleteMeeting(meeting.id);
+          router.push('/dashboard');
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Unable to delete meeting');
+        }
+      },
+    });
   };
 
   const handleCopySummary = async () => {
@@ -224,6 +230,18 @@ export default function MeetingDetailClient({
     }
   };
 
+  const toggleSelected = (itemId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-full flex-col gap-6 px-4 sm:px-6 lg:px-0">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -263,8 +281,8 @@ export default function MeetingDetailClient({
                 <Button size="sm" className="rounded-2xl" onClick={() => setIsEditing(true)}>
                   Edit
                 </Button>
-                <Button size="sm" variant="destructive" className="rounded-2xl" onClick={handleDeleteMeeting} disabled={deleting}>
-                  {deleting ? 'Deleting...' : 'Delete'}
+                <Button size="sm" variant="destructive" className="rounded-2xl" onClick={handleDeleteMeeting}>
+                  Delete
                 </Button>
               </div>
             )
@@ -399,8 +417,8 @@ export default function MeetingDetailClient({
                     <Button size="sm" className="rounded-2xl" onClick={() => setIsEditing(true)}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="destructive" className="rounded-2xl" onClick={handleDeleteMeeting} disabled={deleting}>
-                      {deleting ? 'Deleting...' : 'Delete'}
+                    <Button size="sm" variant="destructive" className="rounded-2xl" onClick={handleDeleteMeeting}>
+                      Delete
                     </Button>
                   </div>
                 )}
@@ -414,69 +432,125 @@ export default function MeetingDetailClient({
             <Badge variant="outline" className="rounded-full">{actionItems.length} action items</Badge>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {(['all', 'pending', 'done', 'overdue'] as const).map((tab) => (
-              <Button
-                key={tab}
-                variant={filter === tab ? 'default' : 'outline'}
-                size="sm"
-                className="rounded-full"
-                onClick={() => setFilter(tab)}
-              >
-                <Filter className="mr-2 h-4 w-4" />
-                {tab === 'all' ? 'All' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              {view === 'list'
+                ? (['all', 'pending', 'done', 'overdue'] as const).map((tab) => (
+                    <Button
+                      key={tab}
+                      variant={filter === tab ? 'default' : 'outline'}
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => setFilter(tab)}
+                    >
+                      <Filter className="mr-2 h-4 w-4" />
+                      {tab === 'all' ? 'All' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </Button>
+                  ))
+                : null}
+            </div>
+            <div className="flex gap-2">
+              <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setView('list')}>
+                List
               </Button>
-            ))}
+              <Button variant={view === 'board' ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setView('board')}>
+                Board
+              </Button>
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {visibleItems.length > 0 ? (
-              <AnimatePresence mode="popLayout">
-                {visibleItems.map((item) => (
-                  <motion.div
-                    key={item.id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4 dark:bg-slate-950/50"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium text-base text-slate-900 dark:text-slate-100">{item.description}</p>
-                          <Badge className={`rounded-full ${statusClass(item.status)}`}>{item.status}</Badge>
+          {view === 'board' ? (
+            <ActionItemsKanban
+              items={actionItems}
+              isAdmin={isAdmin}
+              onSendReminder={handleSendReminder}
+              onItemUpdated={(id, patch) =>
+                setActionItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+              }
+            />
+          ) : (
+            <>
+              {visibleItems.length > 0 ? (
+                <ActionItemsBulkToolbar
+                  items={visibleItems}
+                  selectedIds={selectedIds}
+                  onSelectedIdsChange={setSelectedIds}
+                  onItemsMarkedDone={(ids) =>
+                    setActionItems((current) => current.map((item) => (ids.includes(item.id) ? { ...item, status: 'done' } : item)))
+                  }
+                />
+              ) : null}
+
+              <div className="space-y-3">
+                {visibleItems.length > 0 ? (
+                  <AnimatePresence mode="popLayout">
+                    {visibleItems.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4 dark:bg-slate-950/50"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex min-w-0 items-start gap-3">
+                            {item.status !== 'done' ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleSelected(item.id)}
+                                className="mt-1 shrink-0 text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-slate-200"
+                                aria-label={selectedIds.has(item.id) ? 'Deselect item' : 'Select item'}
+                              >
+                                {selectedIds.has(item.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                              </button>
+                            ) : (
+                              <span className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                            )}
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-medium text-base text-slate-900 dark:text-slate-100">{item.description}</p>
+                                <Badge className={`rounded-full ${statusClass(item.status)}`}>{item.status}</Badge>
+                              </div>
+                              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                                {item.assignee_email} • {item.due_date ? new Date(item.due_date).toLocaleDateString() : 'No due date'}
+                              </p>
+                            </div>
+                          </div>
+                          {item.status !== 'done' ? (
+                            <div className="flex gap-2">
+                              <Button size="sm" className="rounded-2xl" onClick={() => handleDone(item.id)}>
+                                <CheckCircle2 className="mr-2 h-4 w-4" /> Mark as done
+                              </Button>
+                              {isAdmin ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="rounded-2xl"
+                                  onClick={() => handleSendReminder(item.id)}
+                                  disabled={sendingReminders.includes(item.id)}
+                                >
+                                  {sendingReminders.includes(item.id) ? 'Sending...' : 'Send reminder'}
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <Badge className="rounded-full bg-emerald-100 text-emerald-800">Completed</Badge>
+                          )}
                         </div>
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                          {item.assignee_email} • {item.due_date ? new Date(item.due_date).toLocaleDateString() : 'No due date'}
-                        </p>
-                      </div>
-                      {item.status !== 'done' ? (
-                        <div className="flex gap-2">
-                          <Button size="sm" className="rounded-2xl" onClick={() => handleDone(item.id)}>
-                            <CheckCircle2 className="mr-2 h-4 w-4" /> Mark as done
-                          </Button>
-                          {isAdmin ? (
-                            <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => handleSendReminder(item.id)} disabled={sendingReminders.includes(item.id)}>
-                              {sendingReminders.includes(item.id) ? 'Sending...' : 'Send reminder'}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <Badge className="rounded-full bg-emerald-100 text-emerald-800">Completed</Badge>
-                      )}
-                    </div>
-                    <ActionItemComments actionItemId={item.id} currentUserId={currentUserId} />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-8 text-center text-sm text-muted-foreground">
-                <ListTodo className="mx-auto mb-3 h-6 w-6" />
-                No action items for this view yet.
+                        <ActionItemComments actionItemId={item.id} currentUserId={currentUserId} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-8 text-center text-sm text-muted-foreground">
+                    <ListTodo className="mx-auto mb-3 h-6 w-6" />
+                    No action items for this view yet.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/theme';
 import { motion } from 'framer-motion';
+import { CommandPalette } from '@/components/command-palette';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { BrandBadge } from '@/components/ui/brand-badge';
 import { createClient } from '@/utils/supabase/client';
-import { LayoutGrid, Menu, Moon, Settings, ShieldCheck, SunMedium, Users, LogOut, XIcon } from 'lucide-react';
+import { LayoutGrid, Menu, Moon, Search, Settings, ShieldCheck, SunMedium, Users, LogOut, XIcon } from 'lucide-react';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { isAdminUser } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -98,6 +99,10 @@ export function AppShell({ children, user, currentPath, title, description, acti
 
   const isActive = (href: string) => currentPath === href || (href !== '/dashboard' && currentPath.startsWith(href));
 
+  const openCommandPalette = () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+  };
+
   const renderNav = () => (
     <div className="flex flex-col gap-1">
       {navItems.map((item) => {
@@ -185,6 +190,8 @@ export function AppShell({ children, user, currentPath, title, description, acti
           : 'bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_45%),linear-gradient(135deg,_#f8fbff_0%,_#eef7ff_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.15),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_100%)]'
       )}
     >
+      <CommandPalette isAdmin={isAdmin} />
+
       <div className="mx-auto flex w-full max-w-full flex-col lg:flex-row">
         <aside
           className={cn(
@@ -321,6 +328,21 @@ export function AppShell({ children, user, currentPath, title, description, acti
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {actions}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openCommandPalette}
+                  className={cn(
+                    'hidden rounded-xl sm:inline-flex',
+                    isAdmin
+                      ? 'border-indigo-200 bg-white text-slate-900 hover:bg-indigo-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10'
+                      : ''
+                  )}
+                  aria-label="Open command palette"
+                >
+                  <Search className="h-4 w-4" />
+                  <kbd className="ml-2 text-[10px] font-medium opacity-60">⌘K</kbd>
+                </Button>
                 <Button
                   variant="outline"
                   size="icon-sm"
