@@ -36,6 +36,7 @@ type ActionItemSummary = {
 export default function DashboardClient({
   user,
   isAdmin,
+  displayName,
   meetings,
   counts,
   actionItems,
@@ -43,8 +44,9 @@ export default function DashboardClient({
   completionPercent,
   averageOutcomeScore,
 }: {
-  user: { id?: string; email?: string | null; username?: string | null };
+  user: { id?: string; email?: string | null };
   isAdmin: boolean;
+  displayName: string;
   meetings: MeetingSummary[];
   counts: { total: number; your: number; shared: number };
   actionItems: ActionItemSummary[];
@@ -58,8 +60,6 @@ export default function DashboardClient({
   const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [reminderLimit, setReminderLimit] = useState(10);
   const isOwner = (meeting: MeetingSummary) => meeting.user_id === user.id;
-  const displayName = user.username?.trim() || user.email?.split('@')[0] || 'there';
-
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.refresh();

@@ -4,8 +4,9 @@ import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { CalendarDays, Mail, ShieldCheck } from 'lucide-react';
+import { CalendarDays, Mail } from 'lucide-react';
 import SettingsClient from './settings-client';
+import ProfileSettingsClient from './profile-settings-client';
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -19,6 +20,20 @@ export default async function SettingsPage() {
     .select('nudge_preference, slack_access_token, slack_channel_id')
     .eq('user_id', user.id)
     .maybeSingle();
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    // If this fires (or `profile` comes back null with no error — the RLS
+    // "no matching row" case), the profiles table is almost certainly
+    // missing a self-select policy for `id = auth.uid()`. See the
+    // accompanying migration.
+    console.error('[settings/page] failed to load profile.full_name', profileError);
+  }
 
   const preference = settingsError ? 'email' : ((settings?.nudge_preference as string | undefined) || 'email');
   const slackConnected = Boolean(!settingsError && settings?.slack_access_token);
@@ -56,6 +71,16 @@ export default async function SettingsPage() {
                 <p className="font-medium">{createdAt}</p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-3xl border-white/60 bg-white/70 shadow-sm backdrop-blur dark:bg-slate-900/60">
+          <CardHeader>
+            <CardTitle className="text-xl">Profile</CardTitle>
+            <CardDescription>Edit your name, or permanently delete your account.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ProfileSettingsClient initialFullName={profile?.full_name ?? ''} userEmail={user.email} />
           </CardContent>
         </Card>
 

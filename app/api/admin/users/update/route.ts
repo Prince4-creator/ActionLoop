@@ -24,7 +24,11 @@ export async function POST(req: Request) {
       .map((v: unknown) => String(v).trim())
       .filter(Boolean);
 
-    const role = typeof body.role === 'string' ? body.role.trim() : null;
+    // `profiles.role` is NOT NULL in the database, so any non-'admin' value
+    // (including '', undefined, or garbage input) must resolve to 'member'
+    // rather than being passed through as null.
+    const requestedRole = typeof body.role === 'string' ? body.role.trim() : '';
+    const role: 'admin' | 'member' = requestedRole === 'admin' ? 'admin' : 'member';
 
     if (!ids.length) return NextResponse.json({ error: 'id or ids required' }, { status: 400 });
 
@@ -38,7 +42,7 @@ export async function POST(req: Request) {
 
     const { error } = await client
       .from('profiles')
-      .update({ role: role || null })
+      .update({ role })
       .in('id', ids);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -46,10 +50,10 @@ export async function POST(req: Request) {
     await logAdminAction(client, {
       actorId: user.id,
       actorEmail: user.email,
-      action: role ? 'grant_admin_role' : 'revoke_admin_role',
+      action: role === 'admin' ? 'grant_admin_role' : 'revoke_admin_role',
       targetType: 'profiles',
       targetId: ids.length === 1 ? ids[0] : `${ids.length} users`,
-      details: { ids, role: role || 'member' },
+      details: { ids, role },
     });
 
     return NextResponse.json({ success: true, updated: ids.length });

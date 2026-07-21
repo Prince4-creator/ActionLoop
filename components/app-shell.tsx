@@ -22,6 +22,7 @@ type AppShellProps = {
   title?: string;
   description?: string;
   actions?: React.ReactNode;
+    displayName?: string;
 };
 
 const navItems = [
@@ -51,8 +52,7 @@ function gradientForString(value: string) {
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
 }
 
-export function AppShell({ children, user, currentPath, title, description, actions }: AppShellProps) {
-  const router = useRouter();
+export function AppShell({ children, user, currentPath, title, description, actions, displayName }: AppShellProps) {  const router = useRouter();
   const { theme, mounted, setTheme } = useTheme();
   // Default to true so server-rendered HTML and the first client paint
   // match (avoids a hydration warning); the real stored preference is
@@ -256,7 +256,7 @@ export function AppShell({ children, user, currentPath, title, description, acti
                 />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{user.email || 'Workspace member'}</p>
+                <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{displayName || user.email || 'Workspace member'}</p>
                 <span
                   className={cn(
                     'mt-0.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium',

@@ -4,6 +4,7 @@ import DashboardClient from './dashboard-client';
 import { isAdminUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/admin';
 import { getTeamIdsForUser, ensureDefaultTeamForUser } from '@/lib/teams';
+import { getDisplayName } from '@/lib/profile';
 import { AppShell } from '@/components/app-shell';
 
 type MeetingSummary = {
@@ -72,19 +73,17 @@ export default async function DashboardPage() {
     ? Math.round(meetingList.reduce((sum, meeting) => sum + (meeting.outcome_score ?? 0), 0) / meetingList.length)
     : 0;
 
-  // Username set at sign-up (used to assign action items by spoken name in
-  // meeting transcripts) — also shown here as a nicer dashboard greeting
-  // than the email-derived fallback.
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('id', user.id)
-    .maybeSingle();
+  // Display name set on the Settings page (profiles.full_name), used here
+  // instead of the email-derived fallback. Looked up by email rather than
+  // id — profiles.id is not guaranteed to equal auth.users.id in this
+  // project, so an id-based lookup can silently match zero rows under RLS.
+  const displayName = await getDisplayName(supabase, user);
 
   return (
-    <AppShell user={user} currentPath="/dashboard" title="Dashboard" description="Monitor your meetings and workspace progress">
+    <AppShell user={user} currentPath="/dashboard" title="Dashboard" description="Monitor your meetings and workspace progress" displayName={displayName}>
       <DashboardClient
-        user={{ id: user.id, email: user.email, username: profile?.username ?? null }}
+        user={{ id: user.id, email: user.email }}
+        displayName={displayName}
         isAdmin={isAdmin}
         meetings={meetingList}
         counts={{ total: meetingList.length, your: yourMeetingsCount, shared: sharedMeetingsCount }}

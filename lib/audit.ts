@@ -50,6 +50,23 @@ export function describeAuditAction(entry: AuditLogEntry): string {
       return `Converted meeting request ${entry.target_id} to a meeting`;
     case 'meeting_request_deleted':
       return `Deleted meeting request ${entry.target_id}`;
+    case 'user_deleted': {
+      const email = (entry.details as { email?: string | null } | null)?.email;
+      return `Deleted user account${email ? ` (${email})` : ''}`;
+    }
+    case 'user_suspended': {
+      // Field name must match what app/api/admin/users/suspend/route.ts
+      // actually writes: `duration`, not `durationKey`.
+      const details = entry.details as { email?: string | null; duration?: string } | null;
+      const email = details?.email ? ` ${details.email}` : ' user';
+      const duration = details?.duration ? ` (${details.duration})` : '';
+      return `Suspended${email}${duration}`;
+    }
+    case 'user_unsuspended': {
+      const details = entry.details as { email?: string | null } | null;
+      const email = details?.email ? ` ${details.email}` : ' user';
+      return `Unsuspended${email}`;
+    }
     default:
       return entry.action.replace(/_/g, ' ');
   }

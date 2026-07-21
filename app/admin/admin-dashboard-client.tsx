@@ -33,6 +33,9 @@ import {
   ChevronDown,
   Flame,
   ShieldAlert,
+  Trash2,
+  Ban,
+  ShieldOff,
 } from 'lucide-react';
 import SetupTotpClient from './setup-totp/setup-totp-client';
 import { describeAuditAction, type AuditLogEntry } from '@/lib/audit';
@@ -42,6 +45,8 @@ type Profile = {
   email: string | null;
   role: string | null;
   updated_at: string | null;
+  banned_until: string | null;
+  suspended_reason?: string | null;
 };
 
 type Stats = {
@@ -85,6 +90,18 @@ function timeAgo(iso: string) {
   return `${days}d ago`;
 }
 
+function isSuspended(profile: Profile) {
+  return Boolean(profile.banned_until && new Date(profile.banned_until) > new Date());
+}
+
+const SUSPEND_DURATIONS: Array<{ key: string; label: string }> = [
+  { key: '1h', label: '1 hour' },
+  { key: '24h', label: '24 hours' },
+  { key: '7d', label: '7 days' },
+  { key: '30d', label: '30 days' },
+  { key: 'permanent', label: 'Permanent' },
+];
+
 // Dependency-free horizontal bar distribution — no chart library needed.
 function DistributionBars({ stats }: { stats: Stats }) {
   const rows = [
@@ -120,6 +137,7 @@ function DistributionBars({ stats }: { stats: Stats }) {
 
 export default function AdminDashboardClient({
   adminEmail,
+  currentUserId,
   profiles,
   errorMessage,
   schemaError,
@@ -127,6 +145,7 @@ export default function AdminDashboardClient({
   auditLog,
 }: {
   adminEmail: string;
+  currentUserId: string;
   profiles: Profile[];
   errorMessage: string | null;
   schemaError: boolean;
@@ -136,6 +155,8 @@ export default function AdminDashboardClient({
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('email');
   const [pendingRoleId, setPendingRoleId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingSuspendId, setPendingSuspendId] = useState<string | null>(null);
   const [localProfiles, setLocalProfiles] = useState(profiles);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
@@ -178,12 +199,15 @@ export default function AdminDashboardClient({
   };
 
   const handleToggleRole = async (profile: Profile) => {
-    const nextRole = profile.role === 'admin' ? '' : 'admin';
+    // Always send an explicit, non-null role. The `profiles.role` column is
+    // NOT NULL in the database, so "revoking admin" must resolve to the
+    // 'member' role rather than an empty string / null.
+    const nextRole: 'admin' | 'member' = profile.role === 'admin' ? 'member' : 'admin';
     setPendingRoleId(profile.id);
 
     const previous = localProfiles;
     setLocalProfiles((current) =>
-      current.map((p) => (p.id === profile.id ? { ...p, role: nextRole || 'member' } : p))
+      current.map((p) => (p.id === profile.id ? { ...p, role: nextRole } : p))
     );
 
     try {
@@ -194,7 +218,9 @@ export default function AdminDashboardClient({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.error) throw new Error(json.error || 'Update failed');
-      toast.success(nextRole ? `${profile.email} is now an admin` : `${profile.email} is now a member`);
+      toast.success(
+        nextRole === 'admin' ? `${profile.email} is now an admin` : `${profile.email} is now a member`
+      );
     } catch (err) {
       setLocalProfiles(previous);
       toast.error(err instanceof Error ? err.message : 'Unable to update role');
@@ -203,14 +229,14 @@ export default function AdminDashboardClient({
     }
   };
 
-  const handleBulkRoleChange = async (role: 'admin' | '') => {
+  const handleBulkRoleChange = async (role: 'admin' | 'member') => {
     if (!selectedIds.size) return;
     const ids = Array.from(selectedIds);
     setBulkPending(true);
 
     const previous = localProfiles;
     setLocalProfiles((current) =>
-      current.map((p) => (ids.includes(p.id) ? { ...p, role: role || 'member' } : p))
+      current.map((p) => (ids.includes(p.id) ? { ...p, role } : p))
     );
 
     try {
@@ -228,6 +254,97 @@ export default function AdminDashboardClient({
       toast.error(err instanceof Error ? err.message : 'Unable to update selected users');
     } finally {
       setBulkPending(false);
+    }
+  };
+
+  const handleSuspend = async (profile: Profile, durationKey: string, durationLabel: string) => {
+    if (profile.id === currentUserId) return;
+    if (!confirm(`Suspend ${profile.email ?? 'this user'} for ${durationLabel.toLowerCase()}? They'll be signed out and unable to log back in until unsuspended.`)) {
+      return;
+    }
+
+    setPendingSuspendId(profile.id);
+    const previous = localProfiles;
+
+    try {
+      const res = await fetch('/api/admin/users/suspend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: profile.id, action: 'suspend', duration: durationKey }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || 'Suspend failed');
+
+      setLocalProfiles((current) =>
+        current.map((p) => (p.id === profile.id ? { ...p, banned_until: json.bannedUntil } : p))
+      );
+      toast.success(`${profile.email ?? 'User'} suspended for ${durationLabel.toLowerCase()}`);
+    } catch (err) {
+      setLocalProfiles(previous);
+      toast.error(err instanceof Error ? err.message : 'Unable to suspend user');
+    } finally {
+      setPendingSuspendId(null);
+    }
+  };
+
+  const handleUnsuspend = async (profile: Profile) => {
+    setPendingSuspendId(profile.id);
+    const previous = localProfiles;
+
+    try {
+      const res = await fetch('/api/admin/users/suspend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: profile.id, action: 'unsuspend' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || 'Unsuspend failed');
+
+      setLocalProfiles((current) =>
+        current.map((p) => (p.id === profile.id ? { ...p, banned_until: null } : p))
+      );
+      toast.success(`${profile.email ?? 'User'} unsuspended`);
+    } catch (err) {
+      setLocalProfiles(previous);
+      toast.error(err instanceof Error ? err.message : 'Unable to unsuspend user');
+    } finally {
+      setPendingSuspendId(null);
+    }
+  };
+
+  const handleDeleteUser = async (profile: Profile) => {
+    if (profile.id === currentUserId) return;
+    if (
+      !confirm(
+        `Permanently delete ${profile.email ?? 'this user'}? This removes their account, team memberships, and access immediately. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setPendingDeleteId(profile.id);
+    const previous = localProfiles;
+    setLocalProfiles((current) => current.filter((p) => p.id !== profile.id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      next.delete(profile.id);
+      return next;
+    });
+
+    try {
+      const res = await fetch('/api/admin/users/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: profile.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || 'Delete failed');
+      toast.success(`${profile.email ?? 'User'} was removed`);
+    } catch (err) {
+      setLocalProfiles(previous);
+      toast.error(err instanceof Error ? err.message : 'Unable to delete user');
+    } finally {
+      setPendingDeleteId(null);
     }
   };
 
@@ -445,9 +562,9 @@ export default function AdminDashboardClient({
         </CardHeader>
 
         {selectedIds.size > 0 ? (
-          <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-2xl border border-violet-400/25 bg-violet-500/10 px-4 py-3">
+          <div className="mx-5 mb-2 flex flex-col gap-3 rounded-2xl border border-violet-400/25 bg-violet-500/10 px-4 py-3 sm:flex-row sm:items-center">
             <span className="text-sm text-foreground">{selectedIds.size} selected</span>
-            <div className="ml-auto flex gap-2">
+            <div className="flex flex-wrap gap-2 sm:ml-auto">
               <Button size="sm" disabled={bulkPending} onClick={() => handleBulkRoleChange('admin')}>
                 {bulkPending ? 'Applying…' : 'Make admin'}
               </Button>
@@ -455,7 +572,7 @@ export default function AdminDashboardClient({
                 size="sm"
                 variant="outline"
                 disabled={bulkPending}
-                onClick={() => handleBulkRoleChange('')}
+                onClick={() => handleBulkRoleChange('member')}
                 className="border-slate-300 bg-white text-slate-900 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
               >
                 Make member
@@ -495,6 +612,7 @@ export default function AdminDashboardClient({
                   </th>
                   <th className="px-2 py-3">User</th>
                   <th className="px-5 py-3">Role</th>
+                  <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Updated</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
@@ -526,18 +644,73 @@ export default function AdminDashboardClient({
                         )}
                       </Badge>
                     </td>
+                    <td className="px-5 py-3">
+                      {isSuspended(p) ? (
+                        <Badge variant="destructive" title={p.suspended_reason ?? undefined}>
+                          <Ban className="mr-1 h-3 w-3" /> Suspended
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">Active</Badge>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-sm text-muted-foreground">
                       {p.updated_at ? new Date(p.updated_at).toLocaleString() : '—'}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <Button
-                        size="sm"
-                        variant={p.role === 'admin' ? 'destructive' : 'default'}
-                        disabled={pendingRoleId === p.id}
-                        onClick={() => handleToggleRole(p)}
-                      >
-                        {pendingRoleId === p.id ? 'Saving…' : p.role === 'admin' ? 'Revoke admin' : 'Make admin'}
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant={p.role === 'admin' ? 'destructive' : 'default'}
+                          disabled={pendingRoleId === p.id}
+                          onClick={() => handleToggleRole(p)}
+                        >
+                          {pendingRoleId === p.id ? 'Saving…' : p.role === 'admin' ? 'Revoke admin' : 'Make admin'}
+                        </Button>
+
+                        {isSuspended(p) ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pendingSuspendId === p.id}
+                            onClick={() => handleUnsuspend(p)}
+                          >
+                            <ShieldOff className="mr-1.5 h-3.5 w-3.5" />
+                            {pendingSuspendId === p.id ? 'Saving…' : 'Unsuspend'}
+                          </Button>
+                        ) : (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={p.id === currentUserId || pendingSuspendId === p.id}
+                                title={p.id === currentUserId ? "You can't suspend your own account" : 'Suspend user'}
+                              >
+                                <Ban className="mr-1.5 h-3.5 w-3.5" />
+                                {pendingSuspendId === p.id ? 'Saving…' : 'Suspend'}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {SUSPEND_DURATIONS.map((d) => (
+                                <DropdownMenuItem key={d.key} onSelect={() => handleSuspend(p, d.key, d.label)}>
+                                  {d.label}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-30"
+                          disabled={p.id === currentUserId || pendingDeleteId === p.id}
+                          title={p.id === currentUserId ? "You can't delete your own account here" : 'Delete user'}
+                          onClick={() => handleDeleteUser(p)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
