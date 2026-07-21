@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { inviteTeamMember, getTeamInvites, revokeTeamInvite, removeTeamMember, updateTeamMemberRole } from '@/app/actions/team-invites';
-import { Copy, Mail, Trash2, CheckCircle2, Clock, UserMinus, Crown, ShieldOff } from 'lucide-react';
+import { createInviteLink, getInviteLinks, revokeInviteLink } from '@/app/actions/invite-links';
+import { Copy, Mail, Trash2, CheckCircle2, Clock, UserMinus, Crown, ShieldOff, Link2, Ban } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { getAppUrl } from '@/lib/app-url';
 
@@ -19,6 +20,15 @@ type TeamInvite = {
   created_at: string;
   accepted_at: string | null;
   expires_at: string;
+};
+
+type TeamInviteLink = {
+  id: string;
+  token: string;
+  max_uses: number | null;
+  use_count: number;
+  revoked: boolean;
+  expires_at: string | null;
 };
 
 type TeamMember = {
@@ -50,10 +60,15 @@ export default function TeamSettingsClient({
   const [members, setMembers] = useState(teamMembers);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(null);
 
+  const [inviteLinks, setInviteLinks] = useState<TeamInviteLink[]>([]);
+  const [isFetchingLinks, setIsFetchingLinks] = useState(true);
+  const [isCreatingLink, setIsCreatingLink] = useState(false);
+
   const isOwner = userRole === 'owner';
 
   useEffect(() => {
     fetchInvites();
+    fetchInviteLinks();
   }, []);
 
   useEffect(() => {
@@ -69,6 +84,18 @@ export default function TeamSettingsClient({
       console.error('Failed to fetch invites:', error);
     } finally {
       setIsFetching(false);
+    }
+  };
+
+  const fetchInviteLinks = async () => {
+    try {
+      setIsFetchingLinks(true);
+      const result = await getInviteLinks(teamId);
+      setInviteLinks(result);
+    } catch (error) {
+      console.error('Failed to fetch invite links:', error);
+    } finally {
+      setIsFetchingLinks(false);
     }
   };
 
@@ -116,6 +143,40 @@ export default function TeamSettingsClient({
       toast.success('Invite link copied to clipboard');
     } catch (error) {
       toast.error('Failed to copy invite link');
+    }
+  };
+
+  const handleCreateLink = async () => {
+    setIsCreatingLink(true);
+    try {
+      await createInviteLink(teamId, { maxUses: null, expiresInDays: 30 });
+      toast.success('Invite link created');
+      await fetchInviteLinks();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create invite link');
+    } finally {
+      setIsCreatingLink(false);
+    }
+  };
+
+  const handleRevokeLink = async (linkId: string) => {
+    if (!confirm("Revoke this invite link? Anyone who hasn't used it yet will no longer be able to join with it.")) return;
+    try {
+      await revokeInviteLink(linkId);
+      toast.success('Invite link revoked');
+      await fetchInviteLinks();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to revoke link');
+    }
+  };
+
+  const handleCopyLinkUrl = async (token: string) => {
+    try {
+      const url = `${getAppUrl()}/join/${token}`;
+      await navigator.clipboard.writeText(url);
+      toast.success('Invite link copied to clipboard');
+    } catch {
+      toast.error('Failed to copy link');
     }
   };
 
@@ -277,6 +338,51 @@ export default function TeamSettingsClient({
                   </div>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* Public Invite Links */}
+          <Card className="rounded-3xl border-white/60 bg-white/80 shadow-sm backdrop-blur">
+            <CardHeader>
+              <CardTitle className="text-2xl">Public invite links</CardTitle>
+              <CardDescription>Anyone with this link can join {teamName} — no specific email required.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button onClick={handleCreateLink} disabled={isCreatingLink} className="rounded-xl">
+                <Link2 className="mr-2 h-4 w-4" />
+                {isCreatingLink ? 'Creating...' : 'Create new invite link'}
+              </Button>
+
+              {isFetchingLinks ? (
+                <p className="text-sm text-slate-500">Loading invite links...</p>
+              ) : inviteLinks.filter((l) => !l.revoked).length === 0 ? (
+                <p className="text-sm text-slate-500">No active invite links yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {inviteLinks
+                    .filter((l) => !l.revoked)
+                    .map((link) => (
+                      <div key={link.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="break-all font-mono text-sm text-slate-900">{getAppUrl()}/join/{link.token}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Used {link.use_count} time{link.use_count === 1 ? '' : 's'}
+                            {link.max_uses ? ` of ${link.max_uses}` : ''}
+                            {link.expires_at ? ` · Expires ${new Date(link.expires_at).toLocaleDateString()}` : ' · Never expires'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => handleCopyLinkUrl(link.token)} className="h-8 w-8 p-0">
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleRevokeLink(link.id)} className="h-8 w-8 p-0">
+                            <Ban className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -1,62 +1,82 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const ZOMBIE_THRESHOLD = 3; // recurrences before flagging as a "zombie task"
-const SIMILARITY_MIN = 0.35; // matches the threshold baked into the SQL function too
+const ZOMBIE_THRESHOLD = 3; // recurrence_count >= this marks is_zombie
+const SIMILARITY_THRESHOLD = 0.6;
 
-export type NewActionItemForLinking = {
-  id: string;
-  description: string;
-  assignee_email: string | null;
-};
+function normalizeWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let intersection = 0;
+  for (const word of a) {
+    if (b.has(word)) intersection++;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
 
 /**
- * Call this right after inserting a batch of new action_items for a meeting
- * (in createMeetingAndExtractActions, after the action_items insert resolves).
- *
- * For each new item, looks for an existing OPEN (non-done) item for the same
- * assignee in the same team with a similar description. If found, chains it
- * as a recurrence and flags items that keep reappearing without ever getting
- * done ("zombie tasks").
+ * For each newly created action item, look for an open, unfinished item
+ * assigned to the same person on the same team whose description is similar
+ * enough to be "the same ask resurfacing." If found, chain the new item to
+ * it via previous_occurrence_id and bump recurrence_count. Once an ask has
+ * recurred 3+ times without being completed, flag it is_zombie so the UI can
+ * surface "this keeps coming back and nobody's closing it."
  */
 export async function linkRecurringActionItems(
   client: SupabaseClient,
-  teamId: string | null,
-  newItems: NewActionItemForLinking[]
+  teamId: string,
+  newItems: Array<{ id: string; description: string; assignee_email: string | null }>
 ) {
-  if (!teamId || !newItems.length) return;
-
-  for (const item of newItems) {
-    const assignee = item.assignee_email?.trim();
-    if (!assignee || !item.description?.trim()) continue;
-
-    const { data: matches, error } = await client.rpc('find_similar_open_action_item', {
-      p_team_id: teamId,
-      p_assignee_email: assignee,
-      p_description: item.description,
-      p_exclude_id: item.id,
-    });
-
-    if (error) {
-      console.error('[zombie-detection] similarity lookup failed', error);
+  for (const newItem of newItems) {
+    if (!newItem.assignee_email || newItem.assignee_email === 'unassigned@example.com') {
       continue;
     }
 
-    const best = Array.isArray(matches) ? matches[0] : matches;
-    if (!best || best.similarity < SIMILARITY_MIN) continue;
+    try {
+      const { data: candidates, error } = await client
+        .from('action_items')
+        .select('id, description, recurrence_count, meetings!inner(team_id)')
+        .eq('assignee_email', newItem.assignee_email)
+        .neq('status', 'done')
+        .neq('id', newItem.id)
+        .eq('meetings.team_id', teamId);
 
-    const nextCount = (best.recurrence_count ?? 0) + 1;
+      if (error || !candidates?.length) continue;
 
-    const { error: updateError } = await client
-      .from('action_items')
-      .update({
-        previous_occurrence_id: best.id,
-        recurrence_count: nextCount,
-        is_zombie: nextCount >= ZOMBIE_THRESHOLD,
-      })
-      .eq('id', item.id);
+      const newWords = normalizeWords(newItem.description);
+      let bestMatch: { id: string; recurrence_count: number | null } | null = null;
+      let bestScore = 0;
 
-    if (updateError) {
-      console.error('[zombie-detection] failed to link recurrence', updateError);
+      for (const candidate of candidates as any[]) {
+        const score = jaccardSimilarity(newWords, normalizeWords(candidate.description));
+        if (score >= SIMILARITY_THRESHOLD && score > bestScore) {
+          bestScore = score;
+          bestMatch = { id: candidate.id, recurrence_count: candidate.recurrence_count };
+        }
+      }
+
+      if (bestMatch) {
+        const nextCount = (bestMatch.recurrence_count ?? 1) + 1;
+        await client
+          .from('action_items')
+          .update({
+            previous_occurrence_id: bestMatch.id,
+            recurrence_count: nextCount,
+            is_zombie: nextCount >= ZOMBIE_THRESHOLD,
+          })
+          .eq('id', newItem.id);
+      }
+    } catch (err) {
+      console.error('[linkRecurringActionItems] failed for item', newItem.id, err);
     }
   }
 }

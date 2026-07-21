@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { sendReminderForItem, deleteMeeting } from '@/utils/api';
 import { markActionItemDone } from '@/app/actions/meetings';
-import { ArrowLeft, CheckCircle2, CheckSquare, Copy, Download, Filter, ListTodo, Square, Video } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CheckSquare, Copy, Download, Filter, ListTodo, Square, Video, Mail } from 'lucide-react';
 import MeetingShareForm from './meeting-share-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { VideoMeeting } from '@/components/video-meeting';
@@ -86,6 +86,10 @@ export default function MeetingDetailClient({
   const [filter, setFilter] = useState<'all' | 'pending' | 'done' | 'overdue'>('all');
   const [sharedMembers, setSharedMembers] = useState(initialSharedMembers);
   const [videoOpen, setVideoOpen] = useState(false);
+
+  // Post-meeting digest to non-attendees
+  const [digestEmails, setDigestEmails] = useState('');
+  const [isSendingDigest, setIsSendingDigest] = useState(false);
 
   const visibleItems = useMemo(() => {
     if (filter === 'all') return actionItems;
@@ -172,6 +176,26 @@ export default function MeetingDetailClient({
     link.click();
     URL.revokeObjectURL(url);
     toast.success('CSV exported');
+  };
+
+  const handleSendDigest = async () => {
+    if (!digestEmails.trim()) return;
+    setIsSendingDigest(true);
+    try {
+      const res = await fetch('/api/meetings/digest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meetingId: meeting.id, emails: digestEmails }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Failed to send digest');
+      toast.success(`Digest sent to ${json.sentTo} recipient${json.sentTo === 1 ? '' : 's'}`);
+      setDigestEmails('');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to send digest');
+    } finally {
+      setIsSendingDigest(false);
+    }
   };
 
   const resetEditState = () => {
@@ -579,6 +603,32 @@ export default function MeetingDetailClient({
                 ))}
               </div>
             ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {canManageSharing ? (
+        <Card className="rounded-3xl border-white/60 bg-white/80 shadow-sm backdrop-blur dark:bg-slate-900/70">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Mail className="h-4 w-4" /> Send digest to non-attendees
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Sends a one-time summary email (no login required) — separate from "Share," which grants ongoing access.
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                value={digestEmails}
+                onChange={(e) => setDigestEmails(e.target.value)}
+                placeholder="stakeholder1@company.com, stakeholder2@company.com"
+                className="flex-1 rounded-xl border bg-white/90 px-3 py-2 text-sm text-slate-900 dark:bg-slate-800/80 dark:text-slate-100"
+              />
+              <Button onClick={handleSendDigest} disabled={isSendingDigest || !digestEmails.trim()} className="rounded-xl">
+                {isSendingDigest ? 'Sending...' : 'Send digest'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : null}

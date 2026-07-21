@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,42 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
   const [liveMode, setLiveMode] = useState(false);
   const [roomName] = useState(() => generateAdhocRoomName());
   const [liveTranscriptDraft, setLiveTranscriptDraft] = useState('');
+
+  const [agendaSuggestion, setAgendaSuggestion] = useState<{
+    priorMeetingTitle: string;
+    openItems: Array<{ description: string; assignee_email: string; due_date: string | null }>;
+    staleDesiredOutcome: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!title.trim() || title.trim().length < 3) {
+      setAgendaSuggestion(null);
+      return;
+    }
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/meetings/agenda-suggestions?title=${encodeURIComponent(title.trim())}`);
+        const json = await res.json();
+        setAgendaSuggestion(json.suggestion ?? null);
+      } catch {
+        setAgendaSuggestion(null);
+      }
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [title]);
+
+  const handleInsertAgenda = () => {
+    if (!agendaSuggestion) return;
+    const lines: string[] = [`Agenda carried over from "${agendaSuggestion.priorMeetingTitle}":`];
+    if (agendaSuggestion.staleDesiredOutcome) {
+      lines.push(`- Still open: ${agendaSuggestion.staleDesiredOutcome}`);
+    }
+    for (const item of agendaSuggestion.openItems) {
+      const due = item.due_date ? ` (due ${item.due_date})` : '';
+      lines.push(`- Follow up: ${item.description} — ${item.assignee_email}${due}`);
+    }
+    setNotes((current) => (current ? `${lines.join('\n')}\n\n${current}` : lines.join('\n')));
+  };
 
   const handleStartLiveCall = () => {
     setLiveMode(true);
@@ -152,6 +188,34 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
                   ) : null}
                 </div>
 
+                {agendaSuggestion && (agendaSuggestion.openItems.length > 0 || agendaSuggestion.staleDesiredOutcome) ? (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm">
+                    <p className="font-semibold text-blue-900">
+                      Suggested agenda from "{agendaSuggestion.priorMeetingTitle}"
+                    </p>
+                    <ul className="mt-2 space-y-1 text-blue-800">
+                      {agendaSuggestion.staleDesiredOutcome ? (
+                        <li>• Still open: {agendaSuggestion.staleDesiredOutcome}</li>
+                      ) : null}
+                      {agendaSuggestion.openItems.slice(0, 5).map((item, i) => (
+                        <li key={i}>
+                          • {item.description} — {item.assignee_email}
+                          {item.due_date ? ` (due ${item.due_date})` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 rounded-xl"
+                      onClick={handleInsertAgenda}
+                    >
+                      Insert into notes
+                    </Button>
+                  </div>
+                ) : null}
+
                 <div>
                   <label className="text-sm font-medium block mb-1">Transcript *</label>
                   <Textarea
@@ -162,6 +226,7 @@ export default function NewMeetingClient({ isAdmin }: { isAdmin: boolean }) {
                     required
                   />
                 </div>
+                
                 <Button
                   type="submit"
                   className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white"

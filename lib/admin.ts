@@ -1,9 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-// Capture a reference to fetch before Next.js has a chance to further patch
-// anything in this module's scope — most reliable if this module is only
-// ever imported server-side (which lib/admin.ts already is).
-const nodeFetch: typeof fetch = globalThis.fetch;
+import { fetch as undiciFetch } from 'undici';
 
 export function createAdminClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,7 +17,16 @@ export function createAdminClient() {
         persistSession: false,
       },
       global: {
-        fetch: nodeFetch,
+        // Next.js's dev server patches the global `fetch` for its own
+        // request caching/dedup instrumentation. That patched fetch is a
+        // known source of `AuthRetryableFetchError` (empty message, status
+        // 500) specifically for Supabase's Auth Admin API calls
+        // (auth.admin.deleteUser, auth.admin.listUsers, etc.) when invoked
+        // from inside an API route. Using undici's fetch directly bypasses
+        // Next's wrapper for this client only — everything else (regular
+        // table queries via .from()) is unaffected and keeps working as
+        // before.
+        fetch: undiciFetch as unknown as typeof fetch,
       },
     }
   );

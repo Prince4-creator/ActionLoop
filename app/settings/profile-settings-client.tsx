@@ -50,7 +50,11 @@ export default function ProfileSettingsClient({
     if (!canDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch('/api/settings/delete-account', { method: 'POST' });
+      const res = await fetch('/api/settings/delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmEmail: confirmText }),
+      });
       const payload = await res.json();
       if (!res.ok || payload.error) throw new Error(payload.error || 'Unable to delete account');
 

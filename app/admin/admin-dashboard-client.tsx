@@ -413,6 +413,12 @@ export default function AdminDashboardClient({
                 <ArrowUpRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
+            <Link href="/admin/meetings">
+             <Button className="rounded-2xl border border-white/20 bg-white/10 text-white backdrop-blur hover:bg-white/20">
+              <CalendarClock className="mr-2 h-4 w-4" /> All meetings
+              <ArrowUpRight className="ml-2 h-4 w-4" />
+             </Button>
+            </Link>
             <Link href="/admin/zombie-tasks">
               <Button className="rounded-2xl border border-white/20 bg-white/10 text-white backdrop-blur hover:bg-white/20">
                 <Flame className="mr-2 h-4 w-4" /> Zombie tasks

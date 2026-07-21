@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 import { isAdminUser } from '@/lib/auth';
+import { sendDigestEmail } from '@/lib/digest'
 import { getTeamIdForUser, getTeamMembersWithEmails } from '@/lib/teams';
 import { linkRecurringActionItems } from '@/lib/zombie-detection';
 import OpenAI from 'openai';
@@ -820,7 +821,7 @@ export async function markActionItemDone(actionItemId: string) {
 
   const { data: item, error: itemError } = await client
     .from('action_items')
-    .select('id, meeting_id, assignee_email')
+    .select('id, meeting_id, assignee_email, due_date')
     .eq('id', actionItemId)
     .maybeSingle();
 
@@ -846,7 +847,27 @@ export async function markActionItemDone(actionItemId: string) {
   if (item?.meeting_id) {
     await recalculateOutcomeScore(client, item.meeting_id);
 
-    const { data: meetingForNotify } = await client.from('meetings').select('id, title, team_id').eq('id', item.meeting_id).maybeSingle();
+    const { data: meetingForNotify } = await client
+      .from('meetings')
+      .select('id, title, team_id')
+      .eq('id', item.meeting_id)
+      .maybeSingle();
+
+    // Record a completion event for streak tracking. Best-effort — a failure
+    // here should never block the person from marking their item done.
+    try {
+      const wasOnTime = !item.due_date || new Date() <= new Date(item.due_date);
+      await client.from('completion_events').insert({
+        action_item_id: actionItemId,
+        assignee_email: item.assignee_email,
+        team_id: meetingForNotify?.team_id ?? null,
+        due_date: item.due_date,
+        was_on_time: wasOnTime,
+      });
+    } catch (err) {
+      console.error('[markActionItemDone] failed to record completion event', err);
+    }
+
     if (meetingForNotify?.team_id) {
       const { data: remainingItems } = await client
         .from('action_items')
@@ -915,4 +936,64 @@ export async function shareMeetingWithUser(formData: FormData) {
   }
 
   return { success: true };
+}
+
+export async function sendMeetingDigest(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
+
+  const meetingId = String(formData.get('meeting_id') ?? '').trim();
+  const emailsRaw = String(formData.get('emails') ?? '');
+  const emails = emailsRaw
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!meetingId || !emails.length) {
+    throw new Error('Meeting id and at least one email are required');
+  }
+
+  const adminClient = createAdminClient();
+  const client = adminClient ?? supabase;
+
+  const { data: meeting, error: meetingError } = await client
+    .from('meetings')
+    .select('id, user_id, title, summary, decision, notes, desired_outcome')
+    .eq('id', meetingId)
+    .maybeSingle();
+
+  if (meetingError || !meeting) {
+    throw new Error('Meeting not found');
+  }
+
+  if (meeting.user_id !== user.id && !isAdminUser(user)) {
+    throw new Error('You do not have permission to send a digest for this meeting');
+  }
+
+  const { data: actionItems } = await client
+    .from('action_items')
+    .select('id')
+    .eq('meeting_id', meetingId);
+
+  const actionItemCount = actionItems?.length ?? 0;
+  const errors: string[] = [];
+
+  for (const email of emails) {
+    try {
+      await sendDigestEmail({ to: email, meeting, actionItemCount });
+    } catch (err) {
+      console.error('[sendMeetingDigest] failed for', email, err);
+      errors.push(email);
+    }
+  }
+
+  if (errors.length === emails.length) {
+    throw new Error('Failed to send digest to all recipients');
+  }
+
+  return { success: true, sentTo: emails.length - errors.length, failed: errors };
 }

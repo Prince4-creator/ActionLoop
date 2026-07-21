@@ -48,12 +48,14 @@ export default async function MeetingDetailPage({
   const client = adminClient ?? supabase;
   const teamIds = await getTeamIdsForUser(client, user.id);
 
+  // Admins see every meeting in the workspace, not just meetings that
+  // belong to a team they personally happen to be a member of.
   let meetingQuery = client
     .from('meetings')
     .select('*')
     .eq('id', meetingId);
 
-  if (teamIds.length) {
+  if (!isAdmin && teamIds.length) {
     meetingQuery = meetingQuery.in('team_id', teamIds);
   }
 
@@ -62,16 +64,19 @@ export default async function MeetingDetailPage({
   let meetingError = meetingResult.error;
   const meetingClient = client;
 
-  // (debug logs removed)
-
   if (!meeting && user.id) {
     // Try an explicit select. If the DB/schema is missing columns, detect them
     // from the error message and retry without those columns so the page still loads.
-    const fallback = await client
+    let fallbackQuery = client
       .from('meetings')
       .select('id, user_id, title, summary, notes, desired_outcome, decision, outcome_score, attendee_count, avg_hourly_rate')
-      .eq('id', meetingId)
-      .maybeSingle<MeetingRecord>();
+      .eq('id', meetingId);
+
+    if (!isAdmin && teamIds.length) {
+      fallbackQuery = fallbackQuery.in('team_id', teamIds);
+    }
+
+    const fallback = await fallbackQuery.maybeSingle<MeetingRecord>();
 
     meeting = fallback.data;
     meetingError = fallback.error;
@@ -97,7 +102,7 @@ export default async function MeetingDetailPage({
           .select(safeSelect)
           .eq('id', meetingId);
 
-        if (teamIds.length) {
+        if (!isAdmin && teamIds.length) {
           retryQuery = retryQuery.in('team_id', teamIds);
         }
 
@@ -107,8 +112,6 @@ export default async function MeetingDetailPage({
         meetingError = retry.error ?? null;
       }
     }
-
-    // (debug logs removed)
   }
 
   if (meetingError || !meeting) {

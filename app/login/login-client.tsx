@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { joinViaInviteLink } from '@/app/actions/invite-links';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icons } from '@/components/ui/icons';
 import { BrandBadge } from '@/components/ui/brand-badge';
@@ -17,13 +18,14 @@ import { acceptTeamInvite } from '@/app/actions/team-invites';
 export default function LoginClient() {
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get('inviteToken');
+  const joinLinkToken = searchParams.get('joinLinkToken');
   const inviteEmail = searchParams.get('email');
 
   const [email, setEmail] = useState(() => (inviteEmail ? decodeURIComponent(inviteEmail) : ''));
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(() => Boolean(inviteToken));
+  const [isSignUp, setIsSignUp] = useState(() => Boolean(inviteToken || joinLinkToken));
   const supabase = createClient();
   const router = useRouter();
 
@@ -63,6 +65,18 @@ export default function LoginClient() {
               console.error('Failed to accept invite:', inviteError);
             }
           }
+
+          if (joinLinkToken) {
+            try {
+              const result = await joinViaInviteLink(joinLinkToken);
+              toast.success('Welcome to the team!');
+              router.push(`/dashboard?teamJoined=${result.teamId}`);
+              return;
+            } catch (joinError) {
+              console.error('Failed to join via link:', joinError);
+              toast.error(joinError instanceof Error ? joinError.message : 'Unable to join team');
+            }
+          }
         }
         toast.success('Account created! Check your email to confirm if required.');
       } else {
@@ -87,6 +101,18 @@ export default function LoginClient() {
               return;
             } catch (inviteError) {
               console.error('Failed to accept invite:', inviteError);
+            }
+          }
+
+          if (joinLinkToken) {
+            try {
+              const result = await joinViaInviteLink(joinLinkToken);
+              toast.success('Joined team successfully!');
+              router.push(`/dashboard?teamJoined=${result.teamId}`);
+              return;
+            } catch (joinError) {
+              console.error('Failed to join via link:', joinError);
+              toast.error(joinError instanceof Error ? joinError.message : 'Unable to join team');
             }
           }
         }
@@ -121,6 +147,8 @@ export default function LoginClient() {
       setIsLoading(false);
     }
   };
+
+  const isLinkedJoin = Boolean(inviteToken || joinLinkToken);
 
   return (
     <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-slate-50 text-slate-900 py-16 px-4 dark:bg-slate-950 dark:text-slate-100">
@@ -166,10 +194,10 @@ export default function LoginClient() {
                 <div className="absolute inset-0 bg-white/60 dark:bg-slate-950/70 pointer-events-none" />
                   <CardHeader className="space-y-1 text-center relative z-10 px-6 pt-8">
                   <CardTitle className="text-2xl lg:text-3xl font-semibold text-slate-900 tracking-tight dark:text-white">
-                    {inviteToken && isSignUp ? 'Join your team' : isSignUp ? 'Get started' : 'Welcome back'}
+                    {isLinkedJoin && isSignUp ? 'Join your team' : isSignUp ? 'Get started' : 'Welcome back'}
                   </CardTitle>
                   <CardDescription className="text-slate-600 text-sm lg:text-base font-medium dark:text-slate-300">
-                    {inviteToken && isSignUp ? 'Accept your team invitation to collaborate' : isSignUp ? 'Start capturing meetings today' : 'Sign in to your ActionLoop account'}
+                    {isLinkedJoin && isSignUp ? 'Accept your team invitation to collaborate' : isSignUp ? 'Start capturing meetings today' : 'Sign in to your ActionLoop account'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6 relative z-10 px-6 pb-8 pt-4">
