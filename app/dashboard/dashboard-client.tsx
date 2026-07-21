@@ -10,6 +10,9 @@ import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
+import { FollowThroughTrend, type TrendPoint } from '@/components/dashboard/follow-through-trend';
+import { MeetingCostCard } from '@/components/dashboard/meeting-cost-card';
+import { TeamLeaderboardMini, type LeaderboardEntry } from '@/components/dashboard/team-leaderboard-mini';
 import { ArrowRight, BellRing, CheckCircle2, Clock3, ShieldCheck, Sparkles, Users, AlertTriangle } from 'lucide-react';
 import { markActionItemDone } from '@/app/actions/meetings';
 import { sendReminders } from '@/app/actions/reminders';
@@ -33,11 +36,20 @@ type ActionItemSummary = {
   meeting_id: string;
 };
 
+type CostSummary = {
+  totalCostThisMonth: number;
+  totalCostLastMonth: number;
+  meetingCountThisMonth: number;
+};
+
 export default function DashboardClient({
   user,
   isAdmin,
   displayName,
   meetings,
+  trendPoints,
+  costSummary,
+  leaderboard,
   counts,
   actionItems,
   overdueCount,
@@ -48,6 +60,9 @@ export default function DashboardClient({
   isAdmin: boolean;
   displayName: string;
   meetings: MeetingSummary[];
+  trendPoints: TrendPoint[];
+  costSummary: CostSummary;
+  leaderboard: LeaderboardEntry[];
   counts: { total: number; your: number; shared: number };
   actionItems: ActionItemSummary[];
   overdueCount: number;
@@ -222,24 +237,13 @@ export default function DashboardClient({
         </Card>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
-        <Card className={isAdmin
+       <Card className={isAdmin
   ? 'border-indigo-100 bg-white text-slate-900 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white dark:backdrop-blur'
   : 'border-slate-200/80 bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
 }>
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Follow-through score</p>
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{averageOutcomeScore}%</p>
-                </div>
-                <div className="relative flex h-14 w-14 items-center justify-center">
-                  <svg viewBox="0 0 120 120" className="h-14 w-14 -rotate-90">
-                    <circle cx="60" cy="60" r="48" stroke="currentColor" strokeWidth="10" className="text-slate-200" fill="none" />
-                    <motion.circle cx="60" cy="60" r="48" stroke="currentColor" strokeWidth="10" strokeLinecap="round" fill="none" className="text-emerald-500" initial={{ strokeDasharray: 301.59, strokeDashoffset: 301.59 }} animate={{ strokeDasharray: 301.59, strokeDashoffset: 301.59 - (301.59 * averageOutcomeScore) / 100 }} transition={{ duration: 0.8 }} />
-                  </svg>
-                  <span className="absolute text-xs font-semibold text-slate-700 dark:text-slate-200">{averageOutcomeScore}%</span>
-                </div>
-              </div>
+              <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">Follow-through score</p>
+              <FollowThroughTrend points={trendPoints} currentScore={averageOutcomeScore} isAdmin={isAdmin} />
             </CardContent>
           </Card>
           <Card className={isAdmin
@@ -274,6 +278,16 @@ export default function DashboardClient({
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <MeetingCostCard
+            totalCostThisMonth={costSummary.totalCostThisMonth}
+            totalCostLastMonth={costSummary.totalCostLastMonth}
+            meetingCountThisMonth={costSummary.meetingCountThisMonth}
+            isAdmin={isAdmin}
+          />
+          <TeamLeaderboardMini entries={leaderboard} isAdmin={isAdmin} />
         </div>
 
         <div className="mt-8 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
