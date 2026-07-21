@@ -2,12 +2,22 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/lib/admin';
 
-export async function POST() {
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
+export async function POST(req: Request) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+
+    const body = await req.json().catch(() => ({} as { confirmEmail?: string }));
+    const confirmEmail = typeof body.confirmEmail === 'string' ? body.confirmEmail.trim().toLowerCase() : '';
+
+    if (!confirmEmail || confirmEmail !== (user.email ?? '').toLowerCase()) {
+      return NextResponse.json({ error: 'Type your email exactly to confirm deletion' }, { status: 400 });
+    }
 
     const adminClient = createAdminClient();
     if (!adminClient) {
@@ -17,10 +27,6 @@ export async function POST() {
       );
     }
 
-    // teams.owner_id references auth.users ON DELETE CASCADE, so deleting an
-    // owner silently wipes the whole team (and its meetings) out from under
-    // anyone else in it. Block deletion in that case instead of doing that
-    // by surprise.
     const { data: ownedTeams, error: ownedTeamsError } = await adminClient
       .from('teams')
       .select('id, name')
@@ -53,14 +59,27 @@ export async function POST() {
 
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
     if (deleteError) {
+      console.error('[delete-account] deleteUser failed:', {
+        name: deleteError.name,
+        message: deleteError.message,
+        status: (deleteError as any).status,
+        cause: (deleteError as any).cause,
+      });
       return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
 
+    await supabase.auth.signOut().catch(() => {});
+
     return NextResponse.json({ success: true });
   } catch (error) {
+    console.error('[delete-account] unhandled error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unable to delete account' },
       { status: 500 }
     );
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true, route: 'delete-account' });
 }
